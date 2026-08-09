@@ -115,3 +115,120 @@ class HerdrClient:
             self._call("pane", "send-text", pane_id, key)
         else:
             self._call("pane", "send-keys", pane_id, key)
+
+
+from textual.app import App, ComposeResult
+from textual.binding import Binding
+from textual.screen import Screen
+from textual.widgets import DataTable, Footer, Header, Static
+
+STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
+LIST_POLL_SECONDS = 3.0
+READ_POLL_SECONDS = 2.0
+
+
+class AgentListScreen(Screen):
+    BINDINGS = [
+        Binding("enter", "open_agent", "Open", priority=True),
+        Binding("r", "refresh", "Refresh"),
+        Binding("q", "quit_app", "Quit"),
+        Binding("j", "cursor_down", show=False),
+        Binding("k", "cursor_up", show=False),
+    ]
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=False)
+        table = DataTable(cursor_type="row")
+        table.add_columns("st", "agent", "project", "pane")
+        yield table
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self.render_agents()
+
+    def render_agents(self) -> None:
+        app = self.app
+        table = self.query_one(DataTable)
+        selected = table.cursor_row
+        table.clear()
+        for a in app.agents:
+            st = effective_status(a, app.seen)
+            table.add_row(STATUS_ICONS.get(st, "?"), f"{a.kind}" + (f" ({a.name})" if a.name else ""),
+                          a.project, a.pane_id, key=a.pane_id)
+        if table.row_count:
+            table.move_cursor(row=min(selected or 0, table.row_count - 1))
+
+    def _selected_pane_id(self) -> str | None:
+        table = self.query_one(DataTable)
+        if not table.row_count:
+            return None
+        return str(table.get_row_at(table.cursor_row)[3])
+
+    def action_open_agent(self) -> None:
+        pane_id = self._selected_pane_id()
+        if pane_id:
+            self.app.open_agent(pane_id)
+
+    def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        self.app.open_agent(str(event.row_key.value))
+
+    def action_refresh(self) -> None:
+        self.app.refresh_agents()
+
+    def action_quit_app(self) -> None:
+        self.app.exit()
+
+    def action_cursor_down(self) -> None:
+        self.query_one(DataTable).action_cursor_down()
+
+    def action_cursor_up(self) -> None:
+        self.query_one(DataTable).action_cursor_up()
+
+
+class AgentDetailScreen(Screen):
+    BINDINGS = [Binding("q", "back", "Back"), Binding("escape", "back", show=False)]
+
+    def __init__(self, pane_id: str) -> None:
+        super().__init__()
+        self.pane_id = pane_id
+
+    def compose(self) -> ComposeResult:
+        yield Static(self.pane_id, id="detail-header")
+        yield Footer()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+
+class HerdrRemoteApp(App):
+    def __init__(self, client) -> None:
+        super().__init__()
+        self.client = client
+        self.agents: list[AgentInfo] = []
+        self.seen: set[str] = set()
+
+    def on_mount(self) -> None:
+        self.refresh_agents()
+        self.push_screen(AgentListScreen())
+        self.set_interval(LIST_POLL_SECONDS, self.refresh_agents)
+
+    def refresh_agents(self) -> None:
+        try:
+            self.agents = sort_agents(self.client.list_agents(), self.seen)
+        except HerdrError as err:
+            self.notify(err.message, title=err.code, severity="error")
+            return
+        screen = self.screen_stack[-1] if self.screen_stack else None
+        if isinstance(screen, AgentListScreen):
+            screen.render_agents()
+
+    def open_agent(self, pane_id: str) -> None:
+        self.push_screen(AgentDetailScreen(pane_id))
+
+
+def main() -> None:
+    HerdrRemoteApp(HerdrClient()).run()
+
+
+if __name__ == "__main__":
+    main()
