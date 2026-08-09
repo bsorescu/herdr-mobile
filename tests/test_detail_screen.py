@@ -103,6 +103,28 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
         assert "Reviewing herdr_remote.py diff" in rendered
 
 
+async def test_output_spaces_out_glued_bullet_lines(fake_client):
+    # Regression: rows felt glued together when a bullet glyph (⏺ ◯ etc.)
+    # was directly followed by text with no space, e.g. from the agents
+    # footer or a tool-result marker.
+    fake_client.reads["wA:p1"] = "\n".join([
+        "⏺main",
+        "◯general-purpose  Reviewing herdr_remote.py diff",
+        "⎿Read 5 lines",
+    ])
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = [strip.text for strip in log.lines]
+        assert "⏺ main" in rendered
+        assert "◯ general-purpose  Reviewing herdr_remote.py diff" in rendered
+        assert "⎿ Read 5 lines" in rendered
+        assert "⏺main" not in rendered
+        assert "◯general-purpose  Reviewing herdr_remote.py diff" not in rendered
+        assert "⎿Read 5 lines" not in rendered
+
+
 async def test_output_collapses_wide_input_box_border(fake_client):
     # Regression: Claude Code's input-box border is one ~170-char rule line
     # with the session name right-aligned on it. At phone width RichLog

@@ -4,6 +4,7 @@ from herdr_remote import (
     build_header_text,
     collapse_wide_rules,
     effective_status,
+    normalize_bullet_spacing,
     sort_agents,
     strip_ansi,
     trim_trailing_chrome,
@@ -206,3 +207,41 @@ def test_collapse_wide_rules_falls_back_to_default_width_when_invalid():
     line = "─" * 160
     result = collapse_wide_rules(line, width=0)
     assert result == "─" * 40  # _COLLAPSE_FALLBACK_WIDTH
+
+
+def test_normalize_bullet_spacing_inserts_space_when_glued():
+    assert normalize_bullet_spacing("⏺main") == "⏺ main"
+    assert normalize_bullet_spacing("◯general-purpose  Reviewing diff") == \
+        "◯ general-purpose  Reviewing diff"
+    assert normalize_bullet_spacing("⎿Read 5 lines") == "⎿ Read 5 lines"
+
+
+def test_normalize_bullet_spacing_leaves_already_spaced_lines_untouched():
+    line = "⏺ main"
+    assert normalize_bullet_spacing(line) == line
+    line2 = "◯ general-purpose  Reviewing diff"
+    assert normalize_bullet_spacing(line2) == line2
+    # A bullet alone on a line (nothing to glue to) is untouched too.
+    assert normalize_bullet_spacing("⏺") == "⏺"
+
+
+def test_normalize_bullet_spacing_handles_ansi_wrapped_glyph():
+    # Bullet and reset code share a style span, text starts right after.
+    line = "\x1b[32m⏺\x1b[0mmain"
+    result = normalize_bullet_spacing(line)
+    assert result == "\x1b[32m⏺\x1b[0m main"
+    # Bullet and text share the same style span (no reset in between).
+    line2 = "\x1b[32m⏺main\x1b[0m"
+    result2 = normalize_bullet_spacing(line2)
+    assert result2 == "\x1b[32m⏺ main\x1b[0m"
+
+
+def test_normalize_bullet_spacing_only_touches_line_start():
+    # A bullet glyph appearing mid-line (not a leading status marker) is
+    # left alone — only the start of the line is normalized.
+    line = "some text ⏺mid not touched"
+    assert normalize_bullet_spacing(line) == line
+
+
+def test_normalize_bullet_spacing_tolerates_leading_whitespace():
+    assert normalize_bullet_spacing("  ⏺main") == "  ⏺ main"

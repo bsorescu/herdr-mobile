@@ -159,6 +159,27 @@ def collapse_wide_rules(
     return "\n".join(out_lines)
 
 
+_BULLET_CHARS = "⏺●◯○✻✽✢✶✳⎿"
+_GLUED_BULLET_RE = re.compile(
+    rf"^((?:\s|{_ANSI_RE.pattern})*[{_BULLET_CHARS}](?:{_ANSI_RE.pattern})*)(?!\s)(?!$)"
+)
+
+
+def normalize_bullet_spacing(text: str) -> str:
+    """Insert a space after a leading bullet glyph (⏺ ● ◯ ○ ✻ ✽ ✢ ✶ ✳ ⎿) that
+    is glued directly to the text following it (e.g. "⏺main" -> "⏺ main"),
+    so output rows don't feel glued to their bullet. Lines that already have
+    a space (or nothing at all) after the bullet are left untouched.
+    Detection tolerates leading whitespace and interleaved ANSI escape codes
+    around the bullet, and never touches anything past the start of the
+    line — a bullet glyph appearing mid-line is left alone.
+    """
+    return "\n".join(
+        _GLUED_BULLET_RE.sub(lambda m: m.group(1) + " ", line, count=1)
+        for line in text.split("\n")
+    )
+
+
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
@@ -364,6 +385,10 @@ class AgentDetailScreen(Screen):
     ]
 
     DEFAULT_CSS = """
+    AgentDetailScreen #output {
+        padding: 0 0 0 1;
+    }
+
     AgentDetailScreen #remote-bar {
         height: auto;
     }
@@ -471,6 +496,9 @@ class AgentDetailScreen(Screen):
         # stray \r here too so Text.from_ansi never treats it as a
         # carriage-return-overwrite (which wipes all but the last line).
         content = content.replace("\r\n", "\n").replace("\r", "")
+        # Insert a space after a leading bullet glyph glued to its text
+        # (e.g. "⏺main" -> "⏺ main") — rows otherwise feel glued together.
+        content = normalize_bullet_spacing(content)
         # Trim trailing agent-TUI chrome (separators, empty prompt box, footer
         # status line) — display-only, the client stays a faithful reader.
         content = trim_trailing_chrome(content)
