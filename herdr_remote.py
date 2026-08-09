@@ -149,14 +149,24 @@ class AgentListScreen(Screen):
     def render_agents(self) -> None:
         app = self.app
         table = self.query_one(DataTable)
-        selected = table.cursor_row
+        selected_row = table.cursor_row
+        selected_pane_id = self._selected_pane_id()
         table.clear()
         for a in app.agents:
             st = effective_status(a, app.seen)
             table.add_row(STATUS_ICONS.get(st, "?"), f"{a.kind}" + (f" ({a.name})" if a.name else ""),
                           a.project, a.pane_id, key=a.pane_id)
-        if table.row_count:
-            table.move_cursor(row=min(selected or 0, table.row_count - 1))
+        if not table.row_count:
+            return
+        new_row = None
+        if selected_pane_id is not None:
+            try:
+                new_row = table.get_row_index(selected_pane_id)
+            except Exception:
+                new_row = None
+        if new_row is None:
+            new_row = min(selected_row or 0, table.row_count - 1)
+        table.move_cursor(row=new_row)
 
     def _selected_pane_id(self) -> str | None:
         table = self.query_one(DataTable)

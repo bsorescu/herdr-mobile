@@ -1,3 +1,5 @@
+import dataclasses
+
 from textual.widgets import DataTable
 
 from herdr_remote import AgentDetailScreen, AgentListScreen, HerdrRemoteApp
@@ -40,3 +42,23 @@ async def test_list_error_shows_notification_keeps_last_list(fake_client):
         await pilot.pause()
         table = app.screen.query_one(DataTable)
         assert table.row_count == 4  # last good list kept
+
+
+async def test_refresh_preserves_selection_by_identity_across_reorder(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        # initial triage order: wA:p1 (blocked), wC:p1 (done), w3:p1 (working), w7:p2 (idle)
+        await pilot.press("j")  # move cursor from wA:p1 (row 0) to wC:p1 (row 1)
+        assert app.screen._selected_pane_id() == "wC:p1"
+
+        # promote w3:p1 to blocked -> it now sorts ahead of wC:p1, pushing wC:p1 down
+        fake_client.agents = [
+            dataclasses.replace(a, status="blocked") if a.pane_id == "w3:p1" else a
+            for a in fake_client.agents
+        ]
+        app.refresh_agents()
+        await pilot.pause()
+
+        table = app.screen.query_one(DataTable)
+        assert str(table.get_row_at(2)) and "wC:p1" in str(table.get_row_at(2))
+        assert app.screen._selected_pane_id() == "wC:p1"  # cursor followed the agent, not the index
