@@ -1,4 +1,12 @@
-from herdr_remote import AgentInfo, effective_status, sort_agents, strip_ansi, trim_trailing_chrome
+from herdr_remote import (
+    AgentInfo,
+    PROJECT_CHIP_STYLE,
+    build_header_text,
+    effective_status,
+    sort_agents,
+    strip_ansi,
+    trim_trailing_chrome,
+)
 
 
 def make(pane_id, status):
@@ -132,3 +140,23 @@ def test_strip_ansi_removes_csi_sequences():
     assert strip_ansi("\x1b[0m\x1b[38;2;248;248;242m────\x1b[0m") == "────"
     assert strip_ansi("\x1b[32mhello\x1b[0m") == "hello"
     assert strip_ansi("plain text") == "plain text"
+
+
+def test_build_header_text_plain_text_contains_all_parts():
+    a = AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/AiMate")
+    text = build_header_text(a, "blocked")
+    plain = text.plain
+    assert "wA:p1" in plain
+    assert "claude" in plain
+    assert "AiMate" in plain
+    assert "blocked" in plain
+
+
+def test_build_header_text_project_segment_has_green_chip_style():
+    a = AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/AiMate")
+    text = build_header_text(a, "blocked")
+    green_spans = [s for s in text.spans if s.style == PROJECT_CHIP_STYLE]
+    assert len(green_spans) == 1
+    span = green_spans[0]
+    # The chip covers exactly " {project} " — padded, nothing else styled.
+    assert text.plain[span.start:span.end] == " AiMate "

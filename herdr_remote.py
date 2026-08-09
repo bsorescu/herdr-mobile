@@ -187,6 +187,22 @@ STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "�
 LIST_POLL_SECONDS = 3.0
 READ_POLL_SECONDS = 2.0
 STALL_SECONDS = 6.0
+PROJECT_CHIP_STYLE = "black on bright_green"
+
+
+def build_header_text(agent: AgentInfo, status: str) -> Text:
+    """Build the detail-screen header, with the project name as a highly
+    visible chip (black on bright green) so it's instantly clear which
+    session/agent is on screen. bright_green renders well in both truecolor
+    and 256-color terminals, unlike a hex color.
+    """
+    icon = STATUS_ICONS.get(status, "?")
+    text = Text()
+    text.append(f"{agent.pane_id} · {agent.kind} · ")
+    text.append(f" {agent.project} ", style=PROJECT_CHIP_STYLE)
+    text.append(f" — {icon} {status}")
+    return text
+
 
 REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab",
                "escape": "esc", "y": "y", "n": "n",
@@ -366,8 +382,7 @@ class AgentDetailScreen(Screen):
         if a is None:
             return
         st = effective_status(a, self.app.seen)
-        self.query_one("#detail-header", Static).update(
-            f"{a.pane_id} · {a.kind} · {a.project} — {STATUS_ICONS.get(st, '?')} {st}")
+        self.query_one("#detail-header", Static).update(build_header_text(a, st))
         if st == "blocked" and not self._auto_shown:
             self.query_one("#remote-bar").display = True
             self._auto_shown = True
