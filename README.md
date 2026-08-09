@@ -36,7 +36,7 @@ socket protocol use.
 ### Option 1: clone + run
 
 ```bash
-git clone https://github.com/OWNER/herdr-mobile.git
+git clone https://github.com/bsorescu/herdr-mobile.git
 cd herdr-mobile
 uv run herdr_mobile.py
 ```
@@ -60,7 +60,7 @@ working if you move the clone or symlink the wrapper elsewhere. Make sure
 ### Option 2: `uv tool install`
 
 ```bash
-uv tool install git+https://github.com/OWNER/herdr-mobile
+uv tool install git+https://github.com/bsorescu/herdr-mobile
 ```
 
 This installs the packaged `herdr-mobile` entry point (from `pyproject.toml`)
