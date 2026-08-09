@@ -225,6 +225,8 @@ class AgentDetailScreen(Screen):
         Binding("k", "toggle_remote", "Remote"),
         Binding("n", "next_agent", "Next"),
         Binding("p", "prev_agent", "Prev"),
+        Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
+        Binding("d", "scroll_output('down')", "Scroll", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -351,6 +353,22 @@ class AgentDetailScreen(Screen):
     def action_toggle_remote(self) -> None:
         bar = self.query_one("#remote-bar")
         bar.display = not bar.display
+
+    def action_scroll_output(self, direction: str) -> None:
+        # Screen-level binding so it works regardless of which widget has focus
+        # (touch clients like Termius can't send wheel events; physical arrows
+        # only reach the RichLog while it's focused, which is fragile after
+        # tapping other widgets). The Input widget consumes/stops printable
+        # keys itself before they'd ever reach this binding, so typing "u"/"d"
+        # into the prompt still inserts characters instead of scrolling.
+        log = self.query_one(RichLog)
+        half_page = max(1, log.size.height // 2)
+        delta = -half_page if direction == "up" else half_page
+        log.scroll_relative(y=delta, animate=False, immediate=True)
+        # scroll_y's reactive watcher isn't guaranteed to fire synchronously
+        # within this call (see on_scroll_moved's other callers below); poke
+        # it explicitly so follow updates immediately.
+        self.on_scroll_moved()
 
     def action_next_agent(self) -> None:
         self.app.cycle_agent(self.pane_id, +1)

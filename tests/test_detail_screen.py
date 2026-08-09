@@ -9,6 +9,22 @@ async def open_detail(app, pilot, pane_id="wA:p1"):
     return app.screen
 
 
+async def settle_at_bottom(screen, pilot):
+    """Force the RichLog to a real, settled bottom position.
+
+    on_mount's initial scroll_end race ahead of the first layout pass in the
+    test harness (max_scroll_y isn't known yet), so scroll_y can still read 0
+    right after open_detail() even though the widget is logically "following".
+    Tests that need a genuine non-zero starting scroll position settle here,
+    the same way test_returning_to_bottom_refreshes_immediately does inline.
+    """
+    await pilot.pause()
+    log = screen.query_one(RichLog)
+    log.scroll_end(animate=False, immediate=True)
+    screen.on_scroll_moved()
+    return log
+
+
 async def test_output_renders_and_updates(fake_client):
     fake_client.reads["wA:p1"] = "\x1b[32mAllow Bash?\x1b[0m\n> Yes / No"
     app = HerdrRemoteApp(client=fake_client)
@@ -250,6 +266,67 @@ async def test_button_click_works_at_portrait_size(fake_client):
         await open_detail(app, pilot, "wA:p1")
         await pilot.click("#rk-esc")
         assert ("wA:p1", "esc") in fake_client.keys
+
+
+async def test_u_key_scrolls_up_and_pauses_follow(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        assert screen.follow is True
+        scroll_before = log.scroll_y
+        await pilot.press("u")
+        assert log.scroll_y < scroll_before
+        assert screen.follow is False
+
+
+async def test_d_key_scrolls_down_and_resumes_follow(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("u")
+        assert screen.follow is False
+        for _ in range(10):
+            await pilot.press("d")
+            if screen.follow:
+                break
+        assert screen.follow is True
+        assert log.is_vertical_scroll_end
+
+
+async def test_u_d_typed_into_prompt_input_insert_not_scroll(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        assert screen.follow is True
+        await pilot.press("i")
+        assert isinstance(app.focused, Input)
+        scroll_before = log.scroll_y
+        await pilot.press("u")
+        await pilot.press("d")
+        assert screen.query_one("#prompt", Input).value == "ud"
+        assert log.scroll_y == scroll_before
+        assert screen.follow is True  # unaffected: keys were consumed by the Input
+
+
+async def test_u_scrolls_even_while_remote_bar_visible(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        log = await settle_at_bottom(screen, pilot)
+        scroll_before = log.scroll_y
+        await pilot.press("u")
+        assert log.scroll_y < scroll_before
+        assert screen.follow is False
+        # u/d are not remote keys: nothing forwarded to the agent
+        assert fake_client.keys == []
 
 
 async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):

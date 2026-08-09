@@ -53,11 +53,16 @@ Agents are shown in triage order: `blocked` → `done` → `working` → `idle` 
 | `i` | Focus the prompt box (type, then `enter` to send) |
 | `k` | Toggle the remote-control key bar |
 | `n` / `p` | Cycle to next / previous agent (list order) |
+| `u` / `d` | Scroll output up / down half a page |
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
 The output pane follows the agent's live output automatically; scrolling up
 pauses following (so you can read history without it jumping), scrolling
-back to the bottom resumes it.
+back to the bottom resumes it. `u`/`d` scroll it half a page at a time and
+work regardless of which widget has focus (touch clients like Termius can't
+send mouse-wheel events, and physical arrow keys only scroll the output
+while it's focused) — except while the prompt box is focused, where typing
+`u`/`d` inserts the characters instead, same as any other letter.
 
 The remote-control bar (`k`) shows tappable buttons — `↑ ↓ Enter Esc y n 1 2
 3` — for answering an agent's own approval prompts (e.g. a `blocked`
