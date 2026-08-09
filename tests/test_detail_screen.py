@@ -1,6 +1,6 @@
 from textual.widgets import Input, RichLog
 
-from herdr_remote import HerdrRemoteApp
+from herdr_mobile import HerdrMobileApp
 
 
 async def open_detail(app, pilot, pane_id="wA:p1"):
@@ -27,7 +27,7 @@ async def settle_at_bottom(screen, pilot):
 
 async def test_output_renders_and_updates(fake_client):
     fake_client.reads["wA:p1"] = "\x1b[32mAllow Bash?\x1b[0m\n> Yes / No"
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -47,7 +47,7 @@ async def test_output_survives_crlf_line_endings(fake_client):
     # (bypassing HerdrClient's own normalization), so this exercises the
     # screen's own defensive stripping in refresh_output before from_ansi.
     fake_client.reads["wA:p1"] = "\x1b[32mearly line\x1b[0m\r\nmiddle line\r\nlast line"
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -67,7 +67,7 @@ async def test_output_trims_trailing_claude_chrome(fake_client):
         "────────",
         "⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
     ])
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -88,9 +88,9 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
         "-- INSERT -- ⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
         "",
         "⏺ main",
-        "◯ general-purpose  Reviewing herdr_remote.py diff",
+        "◯ general-purpose  Reviewing herdr_mobile.py diff",
     ])
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -100,7 +100,7 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
         assert "some real content" in rendered
         assert "⏺ main" in rendered
         assert "general-purpose" in rendered
-        assert "Reviewing herdr_remote.py diff" in rendered
+        assert "Reviewing herdr_mobile.py diff" in rendered
 
 
 async def test_output_spaces_out_glued_bullet_lines(fake_client):
@@ -109,19 +109,19 @@ async def test_output_spaces_out_glued_bullet_lines(fake_client):
     # footer or a tool-result marker.
     fake_client.reads["wA:p1"] = "\n".join([
         "⏺main",
-        "◯general-purpose  Reviewing herdr_remote.py diff",
+        "◯general-purpose  Reviewing herdr_mobile.py diff",
         "⎿Read 5 lines",
     ])
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
         rendered = [strip.text for strip in log.lines]
         assert "⏺ main" in rendered
-        assert "◯ general-purpose  Reviewing herdr_remote.py diff" in rendered
+        assert "◯ general-purpose  Reviewing herdr_mobile.py diff" in rendered
         assert "⎿ Read 5 lines" in rendered
         assert "⏺main" not in rendered
-        assert "◯general-purpose  Reviewing herdr_remote.py diff" not in rendered
+        assert "◯general-purpose  Reviewing herdr_mobile.py diff" not in rendered
         assert "⎿Read 5 lines" not in rendered
 
 
@@ -133,7 +133,7 @@ async def test_output_collapses_wide_input_box_border(fake_client):
     # name chip-styled (black on cyan).
     border = "─" * 150 + " herdr-remote-s0 ──"
     fake_client.reads["wA:p1"] = "\n".join(["some real content", border])
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test(size=(44, 30)) as pilot:  # portrait phone width
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -163,7 +163,7 @@ async def test_output_does_not_clip_long_lines_at_phone_width(fake_client):
     # width instead.
     long_line = "word" + "".join(f" w{i}" for i in range(60))  # ~230 chars
     fake_client.reads["wA:p1"] = long_line
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test(size=(44, 30)) as pilot:  # portrait phone width
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -174,17 +174,17 @@ async def test_output_does_not_clip_long_lines_at_phone_width(fake_client):
 
 
 async def test_header_shows_identity_and_status(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         header = screen.query_one("#detail-header")
         text = str(header.render())
-        assert "wA:p1" in text and "blocked" in text and "AiMate" in text
+        assert "wA:p1" in text and "blocked" in text and "api-server" in text
 
 
 async def test_scroll_up_pauses_follow(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         assert screen.follow is True
@@ -201,7 +201,7 @@ async def test_scroll_up_pauses_follow(fake_client):
 
 async def test_paused_follow_ignores_tick_refresh(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -223,7 +223,7 @@ async def test_paused_follow_ignores_tick_refresh(fake_client):
 
 async def test_returning_to_bottom_refreshes_immediately(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
@@ -243,7 +243,7 @@ async def test_returning_to_bottom_refreshes_immediately(fake_client):
 
 
 async def test_prompt_sends_and_clears(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "w3:p1")
         await pilot.press("i")
@@ -255,9 +255,9 @@ async def test_prompt_sends_and_clears(fake_client):
 
 
 async def test_prompt_error_keeps_text(fake_client):
-    from herdr_remote import HerdrError
+    from herdr_mobile import HerdrError
     fake_client.errors["prompt_agent"] = HerdrError("pane_busy", "pane not at prompt")
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "w3:p1")
         await pilot.press("i")
@@ -268,7 +268,7 @@ async def test_prompt_error_keeps_text(fake_client):
 
 
 async def test_escape_blurs_input_without_sending(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "w3:p1")
         await pilot.press("i")
@@ -289,8 +289,8 @@ def _capture_notifications(app, monkeypatch):
 
 
 async def test_stall_warns_when_agent_stays_idle(fake_client, monkeypatch):
-    import herdr_remote as hr
-    app = HerdrRemoteApp(client=fake_client)
+    import herdr_mobile as hr
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         notifications = _capture_notifications(app, monkeypatch)
         await open_detail(app, pilot, "w7:p2")  # idle agent
@@ -311,9 +311,9 @@ async def test_stall_warns_when_agent_stays_idle(fake_client, monkeypatch):
 
 
 async def test_stall_silent_when_agent_progressed(fake_client, monkeypatch):
-    import herdr_remote as hr
-    from herdr_remote import AgentInfo
-    app = HerdrRemoteApp(client=fake_client)
+    import herdr_mobile as hr
+    from herdr_mobile import AgentInfo
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         notifications = _capture_notifications(app, monkeypatch)
         await open_detail(app, pilot, "w7:p2")  # idle agent
@@ -336,7 +336,7 @@ async def test_stall_silent_when_agent_progressed(fake_client, monkeypatch):
 
 
 async def test_remote_bar_hidden_then_toggles(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
         bar = screen.query_one("#remote-bar")
@@ -349,14 +349,14 @@ async def test_remote_bar_hidden_then_toggles(fake_client):
 
 
 async def test_remote_bar_autoshows_for_blocked(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked
         assert screen.query_one("#remote-bar").display is True
 
 
 async def test_visible_bar_forwards_whitelisted_keys(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         await open_detail(app, pilot, "wA:p1")
         await pilot.press("down")
@@ -366,7 +366,7 @@ async def test_visible_bar_forwards_whitelisted_keys(fake_client):
 
 
 async def test_buttons_send_keys(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")
         await pilot.click("#rk-esc")
@@ -375,7 +375,7 @@ async def test_buttons_send_keys(fake_client):
 
 async def test_remote_bar_fits_portrait_phone(fake_client):
     from textual.widgets import Static
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test(size=(44, 30)) as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         bar = screen.query_one("#remote-bar")
@@ -395,7 +395,7 @@ async def test_remote_bar_fits_portrait_phone(fake_client):
 
 
 async def test_button_click_works_at_portrait_size(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test(size=(44, 30)) as pilot:
         await open_detail(app, pilot, "wA:p1")
         await pilot.click("#rk-esc")
@@ -404,7 +404,7 @@ async def test_button_click_works_at_portrait_size(fake_client):
 
 async def test_u_key_scrolls_up_and_pauses_follow(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = await settle_at_bottom(screen, pilot)
@@ -417,7 +417,7 @@ async def test_u_key_scrolls_up_and_pauses_follow(fake_client):
 
 async def test_d_key_scrolls_down_and_resumes_follow(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = await settle_at_bottom(screen, pilot)
@@ -433,7 +433,7 @@ async def test_d_key_scrolls_down_and_resumes_follow(fake_client):
 
 async def test_u_d_typed_into_prompt_input_insert_not_scroll(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot)
         log = await settle_at_bottom(screen, pilot)
@@ -450,7 +450,7 @@ async def test_u_d_typed_into_prompt_input_insert_not_scroll(fake_client):
 
 async def test_u_scrolls_even_while_remote_bar_visible(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         assert screen.query_one("#remote-bar").display is True
@@ -465,7 +465,7 @@ async def test_u_scrolls_even_while_remote_bar_visible(fake_client):
 
 async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
     from textual.widgets import Static
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         assert screen.query_one("#remote-bar").display is True

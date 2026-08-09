@@ -2,11 +2,11 @@ import dataclasses
 
 from textual.widgets import DataTable
 
-from herdr_remote import AgentDetailScreen, AgentListScreen, HerdrRemoteApp
+from herdr_mobile import AgentDetailScreen, AgentListScreen, HerdrMobileApp
 
 
 async def test_list_renders_agents_in_triage_order(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         assert isinstance(app.screen, AgentListScreen)
         table = app.screen.query_one(DataTable)
@@ -18,7 +18,7 @@ async def test_list_renders_agents_in_triage_order(fake_client):
 
 
 async def test_enter_opens_detail_for_selected_agent(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         await pilot.press("enter")
         assert isinstance(app.screen, AgentDetailScreen)
@@ -26,7 +26,7 @@ async def test_enter_opens_detail_for_selected_agent(fake_client):
 
 
 async def test_q_from_detail_returns_to_list_and_q_quits(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         await pilot.press("enter")
         # Default row is wA:p1 (blocked), so the remote bar auto-shows; the
@@ -39,8 +39,8 @@ async def test_q_from_detail_returns_to_list_and_q_quits(fake_client):
 
 
 async def test_list_error_shows_notification_keeps_last_list(fake_client):
-    from herdr_remote import HerdrError
-    app = HerdrRemoteApp(client=fake_client)
+    from herdr_mobile import HerdrError
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         fake_client.errors["list_agents"] = HerdrError("connection_failed", "socket gone")
         app.refresh_agents()
@@ -50,7 +50,7 @@ async def test_list_error_shows_notification_keeps_last_list(fake_client):
 
 
 async def test_refresh_preserves_selection_by_identity_across_reorder(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         # initial triage order: wA:p1 (blocked), wC:p1 (done), w3:p1 (working), w7:p2 (idle)
         await pilot.press("j")  # move cursor from wA:p1 (row 0) to wC:p1 (row 1)

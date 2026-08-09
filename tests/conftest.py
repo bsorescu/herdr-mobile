@@ -1,6 +1,6 @@
 import pytest
 
-from herdr_remote import AgentInfo, HerdrError
+from herdr_mobile import AgentInfo, HerdrError
 
 
 class FakeHerdrClient:
@@ -37,10 +37,10 @@ class FakeHerdrClient:
 @pytest.fixture
 def agents():
     return [
-        AgentInfo(pane_id="w3:p1", kind="claude", status="working", cwd="/dev/aqos-platform"),
-        AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/AiMate"),
-        AgentInfo(pane_id="wC:p1", kind="claude", status="done", cwd="/dev/homelab-configs"),
-        AgentInfo(pane_id="w7:p2", kind="pi", status="idle", cwd="/dev/firstmate", name="firstmate"),
+        AgentInfo(pane_id="w3:p1", kind="claude", status="working", cwd="/dev/web-app"),
+        AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/api-server"),
+        AgentInfo(pane_id="wC:p1", kind="claude", status="done", cwd="/dev/infra"),
+        AgentInfo(pane_id="w7:p2", kind="pi", status="idle", cwd="/dev/docs-site", name="docs-site"),
     ]
 
 

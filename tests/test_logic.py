@@ -1,4 +1,4 @@
-from herdr_remote import (
+from herdr_mobile import (
     AgentInfo,
     PROJECT_CHIP_STYLE,
     build_header_text,
@@ -68,14 +68,14 @@ def test_trim_trailing_chrome_keeps_agents_footer_below_status_line():
         "-- INSERT -- ⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
         "",
         "⏺ main",
-        "◯ general-purpose  Reviewing herdr_remote.py diff",
+        "◯ general-purpose  Reviewing herdr_mobile.py diff",
     ]
     text = "\n".join(lines)
     result = trim_trailing_chrome(text)
     assert result == "\n".join([
         "some real content",
         "⏺ main",
-        "◯ general-purpose  Reviewing herdr_remote.py diff",
+        "◯ general-purpose  Reviewing herdr_mobile.py diff",
     ])
 
 
@@ -145,23 +145,23 @@ def test_strip_ansi_removes_csi_sequences():
 
 
 def test_build_header_text_plain_text_contains_all_parts():
-    a = AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/AiMate")
+    a = AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/api-server")
     text = build_header_text(a, "blocked")
     plain = text.plain
     assert "wA:p1" in plain
     assert "claude" in plain
-    assert "AiMate" in plain
+    assert "api-server" in plain
     assert "blocked" in plain
 
 
 def test_build_header_text_project_segment_has_green_chip_style():
-    a = AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/AiMate")
+    a = AgentInfo(pane_id="wA:p1", kind="claude", status="blocked", cwd="/dev/api-server")
     text = build_header_text(a, "blocked")
     green_spans = [s for s in text.spans if s.style == PROJECT_CHIP_STYLE]
     assert len(green_spans) == 1
     span = green_spans[0]
     # The chip covers exactly " {project} " — padded, nothing else styled.
-    assert text.plain[span.start:span.end] == " AiMate "
+    assert text.plain[span.start:span.end] == " api-server "
 
 
 def test_collapse_wide_rules_right_aligns_name_to_exact_width():

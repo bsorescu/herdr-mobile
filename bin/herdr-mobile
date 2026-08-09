@@ -1,0 +1,6 @@
+#!/bin/sh
+# Resolve the repo directory from this script's own location (following
+# symlinks), so the wrapper works no matter where it's installed from
+# (cloned repo, ~/.local/bin symlink, etc) — no personal absolute paths.
+REPO_DIR="$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)"
+exec uv run "$REPO_DIR/herdr_mobile.py" "$@"

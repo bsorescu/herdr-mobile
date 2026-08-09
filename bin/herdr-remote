@@ -1,2 +1,0 @@
-#!/bin/sh
-exec uv run /Users/bogdan/Development/herdr-remote/herdr_remote.py "$@"

@@ -2,7 +2,7 @@
 # requires-python = ">=3.12"
 # dependencies = ["textual==8.2.8"]
 # ///
-"""herdr-remote: phone-friendly TUI for controlling Herdr agents over SSH."""
+"""herdr-mobile: phone-friendly TUI for controlling Herdr agents over SSH."""
 from __future__ import annotations
 
 import json
@@ -603,7 +603,9 @@ class AgentDetailScreen(Screen):
             event.stop()
 
 
-class HerdrRemoteApp(App):
+class HerdrMobileApp(App):
+    TITLE = "herdr-mobile"
+
     def __init__(self, client) -> None:
         super().__init__()
         self.client = client
@@ -670,7 +672,7 @@ class HerdrRemoteApp(App):
 
 
 def main() -> None:
-    HerdrRemoteApp(HerdrClient()).run()
+    HerdrMobileApp(HerdrClient()).run()
 
 
 if __name__ == "__main__":

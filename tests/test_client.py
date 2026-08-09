@@ -4,7 +4,7 @@ from pathlib import Path
 
 import pytest
 
-from herdr_remote import AgentInfo, HerdrClient, HerdrError
+from herdr_mobile import AgentInfo, HerdrClient, HerdrError
 
 FIXTURES = Path(__file__).parent / "fixtures"
 
@@ -27,9 +27,9 @@ def test_list_agents_parses_fixture():
     assert len(agents) == 4
     a = agents[0]
     assert a == AgentInfo(pane_id="w3:p1", kind="claude", status="working",
-                          cwd="/Users/bogdan/Development/aqos-platform", name=None)
-    assert a.project == "aqos-platform"
-    assert agents[1].name == "firstmate"
+                          cwd="/home/dev/projects/web-app", name=None)
+    assert a.project == "web-app"
+    assert agents[1].name == "docs-site"
 
 
 def test_read_agent_returns_text_and_uses_ansi_source():

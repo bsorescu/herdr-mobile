@@ -1,8 +1,8 @@
-from herdr_remote import AgentDetailScreen, AgentListScreen, HerdrError, HerdrRemoteApp
+from herdr_mobile import AgentDetailScreen, AgentListScreen, HerdrError, HerdrMobileApp
 
 
 async def test_n_p_cycle_in_list_order(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         app.open_agent("wA:p1")  # first in triage order
         await pilot.pause()
@@ -18,7 +18,7 @@ async def test_n_p_cycle_in_list_order(fake_client):
 
 
 async def test_opening_done_agent_marks_seen(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         app.open_agent("wC:p1")
         await pilot.pause()
@@ -26,7 +26,7 @@ async def test_opening_done_agent_marks_seen(fake_client):
 
 
 async def test_vanished_agent_pops_to_list(fake_client):
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         app.open_agent("wA:p1")
         await pilot.pause()
@@ -39,7 +39,7 @@ async def test_vanished_agent_pops_to_list(fake_client):
 
 async def test_vanished_agent_pops_to_list_while_follow_paused(fake_client):
     from textual.widgets import RichLog
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         app.open_agent("wA:p1")
         await pilot.pause()
@@ -63,7 +63,7 @@ async def test_vanished_agent_pops_to_list_while_follow_paused(fake_client):
 async def test_server_down_at_start_shows_error_state_and_retry_recovers(fake_client):
     from textual.widgets import Static
     fake_client.errors["list_agents"] = HerdrError("connection_failed", "socket gone")
-    app = HerdrRemoteApp(client=fake_client)
+    app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         error_box = app.screen.query_one("#list-error", Static)
         assert error_box.display is True
