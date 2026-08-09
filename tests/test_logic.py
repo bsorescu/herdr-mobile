@@ -2,6 +2,7 @@ from herdr_mobile import (
     AgentInfo,
     PROJECT_CHIP_STYLE,
     build_header_text,
+    collapse_wide_gaps,
     collapse_wide_rules,
     count_dialog_options,
     detect_yn_prompt,
@@ -335,3 +336,37 @@ def test_detect_yn_prompt_only_scans_trailing_window():
 def test_detect_yn_prompt_handles_ansi_wrapped_marker():
     text = "\x1b[32mAllow this action? (y/n)\x1b[0m"
     assert detect_yn_prompt(text) is True
+
+
+def test_collapse_wide_gaps_joins_right_aligned_stats():
+    line = "  ◯ general-purpose  Sleep briefly (footer probe)" + " " * 100 + "6s · ↓ 20.8k tokens"
+    result = collapse_wide_gaps(line)
+    assert result == "  ◯ general-purpose  Sleep briefly (footer probe) · 6s · ↓ 20.8k tokens"
+
+
+def test_collapse_wide_gaps_preserves_leading_indentation():
+    line = "     nested line"
+    assert collapse_wide_gaps(line) == line
+
+
+def test_collapse_wide_gaps_leaves_exactly_eight_spaces_untouched():
+    line = "left" + " " * 8 + "right"
+    assert collapse_wide_gaps(line) == line
+
+
+def test_collapse_wide_gaps_collapses_nine_spaces():
+    line = "left" + " " * 9 + "right"
+    assert collapse_wide_gaps(line) == "left · right"
+
+
+def test_collapse_wide_gaps_leaves_trailing_spaces_untouched():
+    # No text after the run: trailing spaces are already harmless.
+    line = "trailing text" + " " * 20
+    assert collapse_wide_gaps(line) == line
+
+
+def test_collapse_wide_gaps_handles_ansi_styled_variant():
+    line = "\x1b[32mleft\x1b[0m" + " " * 20 + "\x1b[36mright\x1b[0m"
+    result = collapse_wide_gaps(line)
+    assert result == "left · right"
+    assert "\x1b" not in result

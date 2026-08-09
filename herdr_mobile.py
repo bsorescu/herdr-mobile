@@ -159,6 +159,38 @@ def collapse_wide_rules(
     return "\n".join(out_lines)
 
 
+_WIDE_GAP_MIN_SPACES = 9  # collapse runs of MORE than 8 spaces
+_WIDE_GAP_RE = re.compile(rf"(?<=\S) {{{_WIDE_GAP_MIN_SPACES},}}(?=\S)")
+_WIDE_GAP_REPLACEMENT = " · "
+
+
+def collapse_wide_gaps(text: str) -> str:
+    """Collapse over-long runs of spaces WITHIN a line (same spirit as
+    collapse_wide_rules) to a single " · " separator.
+
+    Agent TUIs often right-align stats with huge space gaps, e.g.
+    "  ◯ general-purpose  Sleep briefly (footer probe)" followed by ~100
+    spaces and then "6s · ↓ 20.8k tokens". At phone width that run wraps
+    into a near-empty row plus the stats alone on their own row. Only a run
+    with non-space text on BOTH sides is collapsed — pure indentation at
+    the start of a line (no text before the run) is left untouched, and
+    trailing spaces (no text after) are already harmless and untouched too.
+    Detection runs on the ANSI-stripped copy of each line, since a run may
+    be interrupted by SGR color-change codes; a line with such a run is
+    rebuilt from that stripped copy (losing any intra-line ANSI styling —
+    acceptable for a decorative gap), so ordinary lines keep their ANSI
+    untouched.
+    """
+    out_lines = []
+    for line in text.split("\n"):
+        stripped = strip_ansi(line)
+        if _WIDE_GAP_RE.search(stripped):
+            out_lines.append(_WIDE_GAP_RE.sub(_WIDE_GAP_REPLACEMENT, stripped))
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
 _BULLET_CHARS = "⏺●◯○✻✽✢✶✳⎿"
 _GLUED_BULLET_RE = re.compile(
     rf"^((?:\s|{_ANSI_RE.pattern})*[{_BULLET_CHARS}](?:{_ANSI_RE.pattern})*)(?!\s)(?!$)"
@@ -608,6 +640,11 @@ class AgentDetailScreen(Screen):
         # Trim trailing agent-TUI chrome (separators, empty prompt box, footer
         # status line) — display-only, the client stays a faithful reader.
         content = trim_trailing_chrome(content)
+        # Collapse huge mid-line space runs (right-aligned stats separated
+        # from the text before them by ~100 spaces) to " · " — otherwise
+        # they wrap into a near-empty row plus the stats alone at phone
+        # width.
+        content = collapse_wide_gaps(content)
         # Collapse full-width rule runs (input-box borders, message dividers)
         # that would otherwise wrap into several useless "stripe" rows at
         # phone width. Use the RichLog's actual usable width so the collapsed

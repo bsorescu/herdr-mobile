@@ -125,6 +125,23 @@ async def test_output_spaces_out_glued_bullet_lines(fake_client):
         assert "⎿Read 5 lines" not in rendered
 
 
+async def test_output_collapses_wide_space_gaps(fake_client):
+    # Regression: agent TUIs right-align stats with huge space gaps (e.g. a
+    # tool-status row followed by ~100 spaces and then "6s · ... tokens"),
+    # which wraps into a near-empty row plus the stats alone on their own
+    # row at phone width.
+    fake_client.reads["wA:p1"] = (
+        "  ◯ general-purpose  Sleep briefly (footer probe)" + " " * 100 + "6s · ↓ 20.8k tokens"
+    )
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "Sleep briefly (footer probe) · 6s" in rendered
+        assert " " * 20 not in rendered
+
+
 async def test_output_collapses_wide_input_box_border(fake_client):
     # Regression: Claude Code's input-box border is one ~170-char rule line
     # with the session name right-aligned on it. At phone width RichLog
