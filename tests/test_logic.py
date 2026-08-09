@@ -89,22 +89,23 @@ def test_trim_trailing_chrome_keeps_blocked_dialog_contents():
     assert "2. No" in result.splitlines()[-1]
 
 
-def test_trim_trailing_chrome_window_limited_to_last_fifteen_lines():
+def test_trim_trailing_chrome_window_limited_to_last_thirty_lines():
     real_lines = [f"real content line {i}" for i in range(5)]
-    decorative_lines = ["────"] * 20  # 20 no-alnum lines
+    decorative_lines = ["────"] * 35  # >30 no-alnum lines
     text = "\n".join(real_lines + decorative_lines)
     result = trim_trailing_chrome(text)
     result_lines = result.splitlines()
-    # Only the trailing 15 lines are ever considered. The first 5 decorative
-    # lines (indices 5-9) fall outside that window and are left untouched;
-    # the 15 inside the window are all removed (no alnum).
+    # Only the trailing 30 lines are ever considered. The first 5 decorative
+    # lines fall outside that window and are left untouched; the 30 inside
+    # the window (the rest of the decorative lines) are all removed (no
+    # alnum) — only the last 30 of the >30 no-alnum tail get removed.
     assert result_lines == real_lines + decorative_lines[:5]
 
 
 def test_trim_trailing_chrome_leaves_lines_outside_window_untouched():
-    # A decorative line far enough from the end (outside the trailing-15
+    # A decorative line far enough from the end (outside the trailing-30
     # window) survives even though it would be dropped inside the window.
-    lines = ["line one", "───"] + [f"filler {i}" for i in range(18)]
+    lines = ["line one", "───"] + [f"filler {i}" for i in range(35)]
     text = "\n".join(lines)
     result = trim_trailing_chrome(text)
     assert result == text

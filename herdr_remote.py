@@ -52,13 +52,13 @@ _CHROME_RE = re.compile(
     r"\? for shortcuts|ctrl\+p to cycle|-- INSERT --",
     re.IGNORECASE,
 )
-_TRIM_WINDOW = 15
+TRIM_WINDOW_LINES = 30
 
 
 def trim_trailing_chrome(text: str) -> str:
     """Drop agent-TUI chrome from the trailing window of the output.
 
-    Only the last _TRIM_WINDOW lines are ever considered — everything before
+    Only the last TRIM_WINDOW_LINES lines are ever considered — everything before
     that window is left untouched, even if it looks decorative. Within the
     window, ANY line (not just ones flush against the very end) is dropped
     if it matches a known Claude Code footer/status pattern (e.g. "auto mode
@@ -70,7 +70,7 @@ def trim_trailing_chrome(text: str) -> str:
     blank lines left behind by the filtering are stripped from the result.
     """
     lines = text.split("\n")
-    window_start = max(0, len(lines) - _TRIM_WINDOW)
+    window_start = max(0, len(lines) - TRIM_WINDOW_LINES)
     kept = lines[:window_start]
     for line in lines[window_start:]:
         if _CHROME_RE.search(line) or not _ALNUM_RE.search(line):
