@@ -149,10 +149,24 @@ class AgentListScreen(Screen):
         table = DataTable(cursor_type="row")
         table.add_columns("st", "agent", "project", "pane")
         yield table
+        yield Static("", id="list-error")
         yield Footer()
 
     def on_mount(self) -> None:
-        self.render_agents()
+        self.query_one("#list-error", Static).display = False
+        self.app.refresh_agents()
+
+    def show_error(self, err: HerdrError) -> None:
+        box = self.query_one("#list-error", Static)
+        box.update(f"Cannot reach herdr: {err.message}\nPress r to retry.")
+        box.display = True
+        self.query_one(DataTable).display = False
+
+    def clear_error(self) -> None:
+        box = self.query_one("#list-error", Static)
+        if box.display:
+            box.display = False
+            self.query_one(DataTable).display = True
 
     def render_agents(self) -> None:
         app = self.app
@@ -209,6 +223,8 @@ class AgentDetailScreen(Screen):
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
         Binding("k", "toggle_remote", "Remote"),
+        Binding("n", "next_agent", "Next"),
+        Binding("p", "prev_agent", "Prev"),
     ]
 
     def __init__(self, pane_id: str) -> None:
@@ -298,6 +314,12 @@ class AgentDetailScreen(Screen):
         bar = self.query_one("#remote-bar")
         bar.display = not bar.display
 
+    def action_next_agent(self) -> None:
+        self.app.cycle_agent(self.pane_id, +1)
+
+    def action_prev_agent(self) -> None:
+        self.app.cycle_agent(self.pane_id, -1)
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         key = event.button.id.removeprefix("rk-")
         self._send_remote_key(key)
@@ -336,6 +358,11 @@ class AgentDetailScreen(Screen):
             bar.display = False
             event.stop()
             return
+        if event.key in ("n", "p"):
+            # Reserved for agent cycling (see BINDINGS) even while the remote
+            # bar is visible; answering y/n prompts remotely still works via
+            # the on-screen buttons.
+            return
         if event.key in REMOTE_KEYS:
             self._send_remote_key(REMOTE_KEYS[event.key])
             event.stop()
@@ -350,19 +377,28 @@ class HerdrRemoteApp(App):
         self.pending_prompts: dict[str, float] = {}
 
     def on_mount(self) -> None:
-        self.refresh_agents()
         self.push_screen(AgentListScreen())
         self.set_interval(LIST_POLL_SECONDS, self.refresh_agents)
 
     def refresh_agents(self) -> None:
+        screen = self.screen_stack[-1] if self.screen_stack else None
+        list_screen = screen if isinstance(screen, AgentListScreen) else None
         try:
             self.agents = sort_agents(self.client.list_agents(), self.seen)
         except HerdrError as err:
-            self.notify(err.message, title=err.code, severity="error")
+            if not self.agents:
+                if list_screen is not None:
+                    list_screen.show_error(err)
+            else:
+                self.notify(err.message, title=err.code, severity="error")
             return
-        screen = self.screen_stack[-1] if self.screen_stack else None
-        if isinstance(screen, AgentListScreen):
-            screen.render_agents()
+
+        self.pending_prompts = {p: t for p, t in self.pending_prompts.items()
+                                 if p in {a.pane_id for a in self.agents}}
+
+        if list_screen is not None:
+            list_screen.render_agents()
+            list_screen.clear_error()
 
         now = time.monotonic()
         for pane_id, sent_at in list(self.pending_prompts.items()):
@@ -374,10 +410,27 @@ class HerdrRemoteApp(App):
                             title="prompt stall", severity="warning")
             del self.pending_prompts[pane_id]
 
+    def cycle_agent(self, current: str, delta: int) -> None:
+        if not self.agents:
+            return
+        ids = [a.pane_id for a in self.agents]
+        idx = ids.index(current) if current in ids else 0
+        target = ids[(idx + delta) % len(ids)]
+        self.pop_screen()
+        self.open_agent(target)
+
     def open_agent(self, pane_id: str) -> None:
+        agent = next((a for a in self.agents if a.pane_id == pane_id), None)
+        if agent and agent.status == "done":
+            self.seen.add(pane_id)
         self.push_screen(AgentDetailScreen(pane_id))
 
     def handle_agent_error(self, pane_id: str, err: HerdrError) -> None:
+        top = self.screen_stack[-1] if self.screen_stack else None
+        if err.code == "agent_not_found" and isinstance(top, AgentDetailScreen) and top.pane_id == pane_id:
+            self.pop_screen()
+            self.notify(f"Agent {pane_id} is gone", severity="warning")
+            return
         self.notify(err.message, title=err.code, severity="error")
 
 
