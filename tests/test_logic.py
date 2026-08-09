@@ -280,10 +280,21 @@ def test_count_dialog_options_caps_at_nine():
 
 def test_count_dialog_options_only_scans_trailing_window():
     # A numbered-looking line from a past, already-answered dialog, pushed
-    # out of the trailing 30-line window by newer output, must be ignored.
+    # out of the trailing 15-line window by newer output, must be ignored.
     old_dialog = ["  9. old stale option"]
     filler = [f"line {i}" for i in range(40)]
     text = "\n".join(old_dialog + filler)
+    assert count_dialog_options(text) == 0
+
+
+def test_count_dialog_options_window_is_fifteen_not_thirty():
+    # A dialog line 20 lines from the end would have survived the old
+    # 30-line window but must be excluded now that it's 15 — a real dialog
+    # sits near the bottom, close to the input box; older conversation
+    # prose shouldn't vote.
+    dialog = ["  4. now-too-old option"]
+    filler = [f"line {i}" for i in range(20)]
+    text = "\n".join(dialog + filler)
     assert count_dialog_options(text) == 0
 
 
@@ -330,6 +341,15 @@ def test_detect_yn_prompt_only_scans_trailing_window():
     old_prompt = ["Allow this action? (y/n)"]
     filler = [f"line {i}" for i in range(40)]
     text = "\n".join(old_prompt + filler)
+    assert detect_yn_prompt(text) is False
+
+
+def test_detect_yn_prompt_window_is_fifteen_not_thirty():
+    # A y/n marker 20 lines from the end would have survived the old
+    # 30-line window but must be excluded now that it's 15.
+    prompt = ["Allow this action? (y/n)"]
+    filler = [f"line {i}" for i in range(20)]
+    text = "\n".join(prompt + filler)
     assert detect_yn_prompt(text) is False
 
 

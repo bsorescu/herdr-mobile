@@ -587,6 +587,52 @@ async def test_bar_open_with_no_dialog_shows_only_navigation_core(fake_client):
             assert screen.query_one(f"#rk-{i}", Button).display is False
 
 
+async def test_non_blocked_agent_ignores_text_that_looks_like_a_dialog(fake_client):
+    # Regression (screenshot-verified false positive): the user's own
+    # conversation text contained "(y/n)" and numbered-list prose — they
+    # were DISCUSSING the feature, there was no actual dialog. Detection
+    # must be gated on the agent's effective status being "blocked", not
+    # just on what the text happens to contain.
+    from textual.widgets import Button
+
+    fake_client.reads["w3:p1"] = "\n".join([
+        "Let's talk about the y/n detector: it matches (y/n), [Y/n], etc.",
+        "The numbered options work like this:",
+        "1. count_dialog_options scans the trailing window",
+        "2. detect_yn_prompt does the same for y/n markers",
+    ])
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
+        await pilot.press("k")  # open manually
+        assert screen.query_one("#remote-bar").display is True
+        for key_name in ["up", "down", "enter", "esc"]:
+            assert screen.query_one(f"#rk-{key_name}", Button).display is True
+        assert screen.query_one("#rk-y", Button).display is False
+        assert screen.query_one("#rk-n", Button).display is False
+        for i in range(1, 10):
+            assert screen.query_one(f"#rk-{i}", Button).display is False
+
+
+async def test_blocked_agent_with_real_dialog_still_shows_buttons(fake_client):
+    # Sanity check: gating on "blocked" must not break the real case.
+    from textual.widgets import Button
+
+    fake_client.reads["wA:p1"] = "\n".join([
+        "Allow this action?",
+        "❯ 1. Yes",
+        "  2. Yes, and don't ask again",
+        "  3. No, and tell Claude what to do differently",
+    ])
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        for i in range(1, 4):
+            assert screen.query_one(f"#rk-{i}", Button).display is True
+        for i in range(4, 10):
+            assert screen.query_one(f"#rk-{i}", Button).display is False
+
+
 async def test_yn_prompt_shows_only_yn_buttons(fake_client):
     from textual.widgets import Button
 

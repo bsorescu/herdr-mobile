@@ -213,7 +213,7 @@ def normalize_bullet_spacing(text: str) -> str:
 
 
 _DIALOG_OPTION_RE = re.compile(r"^\s*(?:❯\s*)?(\d{1,3})\.\s")
-_DIALOG_OPTION_WINDOW_LINES = 30
+_DIALOG_OPTION_WINDOW_LINES = 15  # a real dialog sits at the bottom, near the input box
 _DIALOG_OPTION_MAX = 9
 
 
@@ -555,20 +555,26 @@ class AgentDetailScreen(Screen):
             self.query_one(f"#rk-{i}", Button).display = i <= count
 
     def _sync_remote_bar_buttons(self) -> None:
-        """Show only contextually relevant remote-bar buttons, based purely
-        on the last-read content (not the herdr status field): the
+        """Show only contextually relevant remote-bar buttons: the
         navigation core (up/down/enter/esc) is always available while the
-        bar is open; digit buttons 1..count_dialog_options(...) appear only
-        when a numbered dialog is actually detected — no fallback minimum,
-        no dialog means no digits; y/n buttons appear only when
-        detect_yn_prompt(...) matches. Recomputed on every refresh (see
+        bar is open; digit buttons 1..count_dialog_options(...) and the y/n
+        buttons appear only when the agent's effective status is
+        "blocked" AND the corresponding pattern is actually detected in
+        the last-read content — no fallback minimum, no dialog means no
+        digits. Gating on "blocked" (not just the text heuristics) matters:
+        without it, the user's own conversation text mentioning "(y/n)" or
+        a numbered list (e.g. discussing this very feature) could
+        false-positive and light up answer buttons with no real dialog
+        present. Recomputed on every refresh (see
         refresh_output/refresh_header/action_toggle_remote) so the bar
-        adapts as content changes. The hint line shortens when there are no
-        answer buttons to tap.
+        adapts as content and status change. The hint line shortens when
+        there are no answer buttons to tap.
         """
-        count = count_dialog_options(self._last_read)
+        a = self._agent()
+        is_blocked = a is not None and effective_status(a, self.app.seen) == "blocked"
+        count = count_dialog_options(self._last_read) if is_blocked else 0
         self._set_digit_count(count)
-        yn = detect_yn_prompt(self._last_read)
+        yn = detect_yn_prompt(self._last_read) if is_blocked else False
         self.query_one("#rk-y", Button).display = yn
         self.query_one("#rk-n", Button).display = yn
         hint = self.query_one("#remote-hint", Static)
