@@ -53,7 +53,7 @@ Agents are shown in triage order: `blocked` → `done` → `working` → `idle` 
 | `i` | Focus the prompt box (type, then `enter` to send) |
 | `k` | Toggle the remote-control key bar |
 | `n` / `p` | Cycle to next / previous agent (list order) |
-| `q` / `esc` | Back to list — while the remote-control bar is open, `q` closes the bar first |
+| `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
 The output pane follows the agent's live output automatically; scrolling up
 pauses following (so you can read history without it jumping), scrolling
@@ -62,8 +62,12 @@ back to the bottom resumes it.
 The remote-control bar (`k`) shows tappable buttons — `↑ ↓ Enter Esc y n 1 2
 3` — for answering an agent's own approval prompts (e.g. a `blocked`
 Claude Code permission dialog) by key passthrough. It also auto-opens the
-first time an agent goes `blocked`. While it's open, the same physical keys
-on a real keyboard are forwarded too.
+first time an agent goes `blocked`. While it's open, physical keyboard keys
+are forwarded too for arrows/Enter/Tab/Esc/y/1/2/3 — **but not `n` or
+`p`**: those always cycle to the next/previous agent, bar open or closed,
+so to answer *No* you have to tap the on-screen `[n]` button (the bar's own
+hint line — `tap buttons to answer · n/p = next/prev agent` — says the
+same).
 
 ## Termius note
 
