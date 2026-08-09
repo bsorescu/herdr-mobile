@@ -127,6 +127,28 @@ async def test_output_collapses_wide_input_box_border(fake_client):
         assert name_segment.style is not None
         assert name_segment.style.bgcolor is not None
         assert name_segment.style.color is not None
+        # The width used to build the chip line (scrollable_content_region.width)
+        # must actually match the RichLog's real wrap width — confirmed by the
+        # chip row fitting in exactly one row with nothing clipped off.
+        assert border_strip.cell_length <= log.scrollable_content_region.width
+
+
+async def test_output_does_not_clip_long_lines_at_phone_width(fake_client):
+    # Regression: RichLog defaults to min_width=78. At phone width (44
+    # columns) that made content wrap at 78 and then get horizontally
+    # CLIPPED to the actual (narrower) viewport — silently losing chunks of
+    # every long line. min_width=1 forces wrapping at the real viewport
+    # width instead.
+    long_line = "word" + "".join(f" w{i}" for i in range(60))  # ~230 chars
+    fake_client.reads["wA:p1"] = long_line
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:  # portrait phone width
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        usable_width = log.scrollable_content_region.width
+        assert max(strip.cell_length for strip in log.lines) <= usable_width
+        full_text = "".join(strip.text for strip in log.lines)
+        assert long_line[-20:] in full_text  # nothing lost off the end
 
 
 async def test_header_shows_identity_and_status(fake_client):

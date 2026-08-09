@@ -397,7 +397,12 @@ class AgentDetailScreen(Screen):
 
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
-        yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False)
+        # min_width=1: RichLog defaults to min_width=78, which at phone
+        # widths (e.g. 44 columns) makes it wrap content at 78 and then
+        # horizontally CLIP everything past the actual (narrower) viewport
+        # width — silently losing chunks of every long line. Force wrapping
+        # to always happen at the real viewport width instead.
+        yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False, min_width=1)
         with Vertical(id="remote-bar"):
             with Horizontal(id="remote-row1"):
                 for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"),
