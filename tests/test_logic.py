@@ -2,6 +2,7 @@ from herdr_remote import (
     AgentInfo,
     PROJECT_CHIP_STYLE,
     build_header_text,
+    collapse_wide_rules,
     effective_status,
     sort_agents,
     strip_ansi,
@@ -160,3 +161,29 @@ def test_build_header_text_project_segment_has_green_chip_style():
     span = green_spans[0]
     # The chip covers exactly " {project} " — padded, nothing else styled.
     assert text.plain[span.start:span.end] == " AiMate "
+
+
+def test_collapse_wide_rules_collapses_input_box_border_keeps_name():
+    line = "─" * 150 + " herdr-remote-s0 ──"
+    result = collapse_wide_rules(line)
+    assert result == "─" * 20 + " herdr-remote-s0 ──"
+    assert len(result) < 44
+
+
+def test_collapse_wide_rules_collapses_mid_content_divider():
+    line = "─" * 160
+    result = collapse_wide_rules(line)
+    assert result == "─" * 20
+
+
+def test_collapse_wide_rules_leaves_short_rules_untouched():
+    line = "── ok ──"
+    result = collapse_wide_rules(line)
+    assert result == line
+
+
+def test_collapse_wide_rules_handles_ansi_wrapped_rule_run():
+    line = "\x1b[38;2;100;100;100m" + "─" * 150 + "\x1b[0m"
+    result = collapse_wide_rules(line)
+    assert result == "─" * 20
+    assert "\x1b" not in result

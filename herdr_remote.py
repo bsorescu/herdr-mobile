@@ -99,6 +99,37 @@ def trim_trailing_chrome(text: str) -> str:
     return "\n".join(kept)
 
 
+_RULE_CHARS = "─━═╌┄┈"
+_COLLAPSE_MAX_RUN = 20
+
+
+def collapse_wide_rules(text: str, max_run: int = _COLLAPSE_MAX_RUN) -> str:
+    """Collapse over-long horizontal-rule runs (e.g. Claude Code's ~170-char
+    input-box border, or full-width message dividers) to at most max_run
+    characters.
+
+    At a phone width, RichLog wraps these into several rows that are pure
+    rule characters plus one row with a name fragment (e.g. a right-aligned
+    session name on the input-box border) — a wall of "stripe" rows with no
+    useful information. Detection runs on the ANSI-stripped copy of each
+    line, since a run may be interrupted by SGR color-change codes; only
+    lines that actually contain an over-long run are rebuilt from that
+    stripped copy (losing any intra-line ANSI styling — acceptable, per the
+    caller, since these are decorative separator lines), so ordinary lines
+    keep their ANSI untouched. Non-rule text on a collapsed line (like that
+    right-aligned session name) is preserved verbatim.
+    """
+    rule_run_re = re.compile(rf"([{_RULE_CHARS}])\1{{{max_run},}}")
+    out_lines = []
+    for line in text.split("\n"):
+        stripped = strip_ansi(line)
+        if rule_run_re.search(stripped):
+            out_lines.append(rule_run_re.sub(lambda m: m.group(1) * max_run, stripped))
+        else:
+            out_lines.append(line)
+    return "\n".join(out_lines)
+
+
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
@@ -409,6 +440,10 @@ class AgentDetailScreen(Screen):
         # Trim trailing agent-TUI chrome (separators, empty prompt box, footer
         # status line) — display-only, the client stays a faithful reader.
         content = trim_trailing_chrome(content)
+        # Collapse full-width rule runs (input-box borders, message dividers)
+        # that would otherwise wrap into several useless "stripe" rows at
+        # phone width.
+        content = collapse_wide_rules(content)
         log.write(Text.from_ansi(content))
         # immediate=True: apply synchronously so scroll_y/max_scroll_y are consistent
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly

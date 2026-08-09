@@ -103,6 +103,21 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
         assert "Reviewing herdr_remote.py diff" in rendered
 
 
+async def test_output_collapses_wide_input_box_border(fake_client):
+    # Regression: Claude Code's input-box border is one ~170-char rule line
+    # with the session name right-aligned on it. At phone width RichLog
+    # wraps that into several useless all-rule "stripe" rows.
+    border = "─" * 150 + " herdr-remote-s0 ──"
+    fake_client.reads["wA:p1"] = "\n".join(["some real content", border])
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "─" * 20 + " herdr-remote-s0" in rendered
+        assert "─" * 30 not in rendered
+
+
 async def test_header_shows_identity_and_status(fake_client):
     app = HerdrRemoteApp(client=fake_client)
     async with app.run_test() as pilot:
