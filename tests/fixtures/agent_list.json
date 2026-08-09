@@ -1,0 +1,6 @@
+{"id":"cli:agent:list","result":{"agents":[
+  {"agent":"claude","agent_status":"working","cwd":"/Users/bogdan/Development/aqos-platform","focused":false,"pane_id":"w3:p1","revision":0,"tab_id":"w3:t1","terminal_id":"term_657fdcdb0e1dc3","workspace_id":"w3"},
+  {"agent":"pi","agent_status":"idle","cwd":"/Users/bogdan/Development/firstmate","focused":false,"name":"firstmate","pane_id":"w7:p2","revision":0,"screen_detection_skipped":true,"tab_id":"w7:t1","terminal_id":"term_657fdcdb10fe0b","workspace_id":"w7"},
+  {"agent":"claude","agent_status":"done","cwd":"/Users/bogdan/Development/homelab-configs","focused":false,"pane_id":"wC:p1","revision":0,"tab_id":"wC:t1","terminal_id":"term_658771ce352f937","workspace_id":"wC"},
+  {"agent":"claude","agent_status":"blocked","cwd":"/Users/bogdan/Development/AiMate","focused":false,"pane_id":"wA:p1","revision":0,"tab_id":"wA:t1","terminal_id":"term_6582831118cbc17","workspace_id":"wA"}
+],"type":"agent_list"}}
