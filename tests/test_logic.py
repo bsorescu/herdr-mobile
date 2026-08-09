@@ -1,4 +1,4 @@
-from herdr_remote import AgentInfo, effective_status, sort_agents, trim_trailing_chrome
+from herdr_remote import AgentInfo, effective_status, sort_agents, strip_ansi, trim_trailing_chrome
 
 
 def make(pane_id, status):
@@ -109,3 +109,26 @@ def test_trim_trailing_chrome_leaves_lines_outside_window_untouched():
     text = "\n".join(lines)
     result = trim_trailing_chrome(text)
     assert result == text
+
+
+def test_trim_trailing_chrome_removes_ansi_wrapped_separators_and_prompt():
+    # Regression: on real panes the separators/❯ are wrapped in truecolor SGR
+    # sequences (e.g. "\x1b[38;2;248;248;242m"), which are full of digits and
+    # letters. A naive alnum check on the raw line would treat that as "has
+    # real content" and never remove it. Classification must happen on an
+    # ANSI-stripped copy of the line.
+    separator = "\x1b[0m\x1b[38;2;248;248;242m────────────────\x1b[0m"
+    prompt = "\x1b[0m\x1b[38;2;248;248;242m❯\x1b[0m"
+    status = "\x1b[0m\x1b[38;2;248;248;242m⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt\x1b[0m"
+    content = "\x1b[38;2;100;200;100msome real content\x1b[0m"
+    text = "\n".join([content, separator, prompt, separator, status])
+    result = trim_trailing_chrome(text)
+    assert result == content
+    assert "auto mode on" not in result
+    assert "some real content" in result
+
+
+def test_strip_ansi_removes_csi_sequences():
+    assert strip_ansi("\x1b[0m\x1b[38;2;248;248;242m────\x1b[0m") == "────"
+    assert strip_ansi("\x1b[32mhello\x1b[0m") == "hello"
+    assert strip_ansi("plain text") == "plain text"

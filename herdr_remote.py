@@ -54,6 +54,17 @@ _CHROME_RE = re.compile(
 )
 TRIM_WINDOW_LINES = 30
 
+_ANSI_RE = re.compile(
+    r"\x1b\[[0-9;:?]*[A-Za-z]"  # CSI: SGR colors, cursor moves, etc.
+    r"|\x1b\][^\x07]*\x07"      # OSC, terminated by BEL
+    r"|\x1b[()][A-Z0-9]"        # character-set selection
+)
+
+
+def strip_ansi(line: str) -> str:
+    """Remove ANSI escape sequences from a line."""
+    return _ANSI_RE.sub("", line)
+
 
 def trim_trailing_chrome(text: str) -> str:
     """Drop agent-TUI chrome from the trailing window of the output.
@@ -61,22 +72,29 @@ def trim_trailing_chrome(text: str) -> str:
     Only the last TRIM_WINDOW_LINES lines are ever considered — everything before
     that window is left untouched, even if it looks decorative. Within the
     window, ANY line (not just ones flush against the very end) is dropped
-    if it matches a known Claude Code footer/status pattern (e.g. "auto mode
-    on", "-- INSERT --", "esc to interrupt") or has no alphanumeric
+    if — once ANSI escape sequences are stripped for classification purposes
+    only — it matches a known Claude Code footer/status pattern (e.g. "auto
+    mode on", "-- INSERT --", "esc to interrupt") or has no alphanumeric
     characters (blank lines, box-drawing separators, a bare ❯, colored blank
-    bands). This still keeps real content that happens to sit below such
-    chrome — e.g. Claude Code's "⏺ main" / "◯ general-purpose  ..." agent
-    status lines, which have letters and match no chrome pattern. Trailing
-    blank lines left behind by the filtering are stripped from the result.
+    bands). Classifying on the ANSI-stripped copy matters because a
+    truecolor SGR sequence like "\\x1b[38;2;248;248;242m" is full of digits
+    and letters, which would otherwise make a purely decorative line look
+    like it has real content. The ORIGINAL (ANSI-laden) line is what
+    actually gets dropped or kept. This still keeps real content that
+    happens to sit below such chrome — e.g. Claude Code's "⏺ main" / "◯
+    general-purpose  ..." agent status lines, which have letters and match
+    no chrome pattern. Trailing blank lines left behind by the filtering are
+    stripped from the result.
     """
     lines = text.split("\n")
     window_start = max(0, len(lines) - TRIM_WINDOW_LINES)
     kept = lines[:window_start]
     for line in lines[window_start:]:
-        if _CHROME_RE.search(line) or not _ALNUM_RE.search(line):
+        classify = strip_ansi(line)
+        if _CHROME_RE.search(classify) or not _ALNUM_RE.search(classify):
             continue
         kept.append(line)
-    while kept and kept[-1].strip() == "":
+    while kept and strip_ansi(kept[-1]).strip() == "":
         kept.pop()
     return "\n".join(kept)
 
