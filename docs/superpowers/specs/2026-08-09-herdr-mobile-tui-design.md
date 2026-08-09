@@ -80,9 +80,13 @@ Layout, top to bottom:
    `[↑] [↓] [Enter] [Esc] [y] [n] [1] [2] [3]`, each mapped to
    `send_key`. Toggled with `k`; shown automatically when the agent's
    status becomes `blocked`. While visible, a whitelist of physical keys
-   (arrows, Enter, Tab, y, n, digits, Esc) is forwarded to the agent;
-   all other keys stay local; `q` closes the bar. Free-text typing is NOT
-   forwarded — the whitelist is exactly what agent dialogs need.
+   (arrows, Enter, Tab, Esc, y, digits) is forwarded to the agent — `n`/`p`
+   are excluded and always cycle agents instead (documented trade-off: the
+   tappable `[n]` button still answers No; physical `n` no longer does while
+   the bar is visible, and a `#remote-hint` line under the buttons spells
+   this out); all other keys stay local; `q` closes the bar. Free-text
+   typing is NOT forwarded — the whitelist is exactly what agent dialogs
+   need.
 4. Prompt bar: single-line Input. `i` or tap focuses it; `Enter` sends via
    `prompt_agent` and clears it only on success; tap outside or the `[✕]`
    button unfocuses without sending.

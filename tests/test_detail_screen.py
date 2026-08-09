@@ -221,3 +221,15 @@ async def test_buttons_send_keys(fake_client):
         screen = await open_detail(app, pilot, "wA:p1")
         await pilot.click("#rk-esc")
         assert ("wA:p1", "esc") in fake_client.keys
+
+
+async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
+    from textual.widgets import Static
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        hint = screen.query_one("#remote-hint", Static)
+        assert "n/p" in str(hint.render())
+        await pilot.press("k")  # toggle the bar off
+        assert screen.query_one("#remote-bar").display is False

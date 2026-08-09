@@ -241,6 +241,7 @@ class AgentDetailScreen(Screen):
                                     ("esc", "Esc"), ("y", "y"), ("n", "n"),
                                     ("1", "1"), ("2", "2"), ("3", "3")]:
                 yield Button(label, id=f"rk-{key_name}")
+            yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
         yield Footer()
 
