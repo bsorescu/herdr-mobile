@@ -223,6 +223,35 @@ async def test_buttons_send_keys(fake_client):
         assert ("wA:p1", "esc") in fake_client.keys
 
 
+async def test_remote_bar_fits_portrait_phone(fake_client):
+    from textual.widgets import Static
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        bar = screen.query_one("#remote-bar")
+        assert bar.display is True
+        for key_name in ["up", "down", "enter", "esc", "y", "n", "1", "2", "3"]:
+            region = screen.query_one(f"#rk-{key_name}").region
+            assert region.width > 0
+            assert region.right <= 44, f"rk-{key_name} clipped: {region}"
+            assert region.bottom <= 30, f"rk-{key_name} clipped: {region}"
+        hint = screen.query_one("#remote-hint", Static)
+        hint_region = hint.region
+        assert hint_region.width > 0
+        assert hint_region.right <= 44
+        assert hint_region.bottom <= 30
+        # visible on screen, not just laid out off-canvas
+        assert hint_region.x >= 0 and hint_region.y >= 0
+
+
+async def test_button_click_works_at_portrait_size(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:
+        await open_detail(app, pilot, "wA:p1")
+        await pilot.click("#rk-esc")
+        assert ("wA:p1", "esc") in fake_client.keys
+
+
 async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
     from textual.widgets import Static
     app = HerdrRemoteApp(client=fake_client)

@@ -121,7 +121,7 @@ class HerdrClient:
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal
+from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, Static
 
@@ -227,6 +227,32 @@ class AgentDetailScreen(Screen):
         Binding("p", "prev_agent", "Prev"),
     ]
 
+    DEFAULT_CSS = """
+    AgentDetailScreen #remote-bar {
+        height: auto;
+    }
+
+    AgentDetailScreen #remote-row1,
+    AgentDetailScreen #remote-row2 {
+        height: auto;
+        align: left top;
+    }
+
+    AgentDetailScreen #remote-bar Button {
+        width: auto;
+        min-width: 5;
+        height: 1;
+        border: none;
+        padding: 0 1;
+        margin: 0 1 0 0;
+    }
+
+    AgentDetailScreen #remote-hint {
+        height: auto;
+        color: $text-muted;
+    }
+    """
+
     def __init__(self, pane_id: str) -> None:
         super().__init__()
         self.pane_id = pane_id
@@ -236,11 +262,14 @@ class AgentDetailScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
         yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False)
-        with Horizontal(id="remote-bar"):
-            for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"),
-                                    ("esc", "Esc"), ("y", "y"), ("n", "n"),
-                                    ("1", "1"), ("2", "2"), ("3", "3")]:
-                yield Button(label, id=f"rk-{key_name}")
+        with Vertical(id="remote-bar"):
+            with Horizontal(id="remote-row1"):
+                for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"),
+                                        ("esc", "Esc"), ("y", "y")]:
+                    yield Button(label, id=f"rk-{key_name}")
+            with Horizontal(id="remote-row2"):
+                for key_name, label in [("n", "n"), ("1", "1"), ("2", "2"), ("3", "3")]:
+                    yield Button(label, id=f"rk-{key_name}")
             yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
         yield Footer()
