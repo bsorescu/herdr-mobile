@@ -46,6 +46,8 @@ class HerdrClient:
             raise HerdrError("herdr_missing", "herdr CLI not found on PATH") from None
         except subprocess.TimeoutExpired:
             raise HerdrError("timeout", f"herdr {' '.join(args)} timed out") from None
+
+        # First pass: scan both streams for error JSON (errors take absolute precedence)
         for stream in (proc.stdout, proc.stderr):
             stripped = (stream or "").strip()
             if not stripped:
@@ -57,9 +59,26 @@ class HerdrClient:
             if "error" in payload:
                 err = payload["error"]
                 raise HerdrError(err.get("code", "cli_error"), err.get("message", stripped))
-            return payload
+
+        # Second pass: look for success JSON on stdout
+        success_payload = None
+        stripped = (proc.stdout or "").strip()
+        if stripped:
+            try:
+                payload = json.loads(stripped)
+                if "error" not in payload:
+                    success_payload = payload
+            except ValueError:
+                pass
+
+        # Check returncode: must be 0 to accept success payload
         if proc.returncode != 0:
             raise HerdrError("cli_error", (proc.stderr or proc.stdout or "herdr failed").strip())
+
+        # Return success payload if found and returncode was 0
+        if success_payload:
+            return success_payload
+
         return {}
 
     def list_agents(self) -> list[AgentInfo]:

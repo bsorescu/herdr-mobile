@@ -88,3 +88,22 @@ def test_missing_herdr_binary_raises_herdr_missing():
     with pytest.raises(HerdrError) as ei:
         HerdrClient(run_cli=run).list_agents()
     assert ei.value.code == "herdr_missing"
+
+
+def test_error_json_on_stderr_takes_precedence_over_success_on_stdout():
+    """When error JSON is on stderr but success JSON is on stdout, error takes precedence."""
+    success_payload = {"id": "cli:agent:read", "result": {"read": {"text": "hello"}}}
+    error_json = '{"error":{"code":"agent_busy","message":"agent is busy"},"id":"cli:request"}'
+    run = fake_run(stdout=json.dumps(success_payload), stderr=error_json, returncode=1)
+    with pytest.raises(HerdrError) as ei:
+        HerdrClient(run_cli=run).read_agent("w3:p1")
+    assert ei.value.code == "agent_busy"
+
+
+def test_returncode_1_without_error_json_raises_cli_error():
+    """When returncode is non-zero but no error JSON anywhere, raise cli_error."""
+    success_payload = {"id": "cli:agent:read", "result": {"read": {"text": "hello"}}}
+    run = fake_run(stdout=json.dumps(success_payload), returncode=1)
+    with pytest.raises(HerdrError) as ei:
+        HerdrClient(run_cli=run).read_agent("w3:p1")
+    assert ei.value.code == "cli_error"
