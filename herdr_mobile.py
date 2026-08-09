@@ -351,7 +351,7 @@ from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, S
 STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
 LIST_POLL_SECONDS = 3.0
 READ_POLL_SECONDS = 2.0
-STALL_SECONDS = 6.0
+STALL_SECONDS = 12.0
 PROJECT_CHIP_STYLE = "black on bright_green"
 
 
@@ -765,6 +765,11 @@ class HerdrMobileApp(App):
         self.agents: list[AgentInfo] = []
         self.seen: set[str] = set()
         self.pending_prompts: dict[str, float] = {}
+        # Panes that already had one stale-and-still-idle/blocked observation
+        # (see refresh_agents): a second consecutive one is required before
+        # warning, since list-poll data can lag up to LIST_POLL_SECONDS
+        # behind a read that already saw the prompt land.
+        self._stale_strikes: set[str] = set()
 
     def on_mount(self) -> None:
         self.push_screen(AgentListScreen())
@@ -783,8 +788,9 @@ class HerdrMobileApp(App):
                 self.notify(err.message, title=err.code, severity="error")
             return
 
-        self.pending_prompts = {p: t for p, t in self.pending_prompts.items()
-                                 if p in {a.pane_id for a in self.agents}}
+        live_pane_ids = {a.pane_id for a in self.agents}
+        self.pending_prompts = {p: t for p, t in self.pending_prompts.items() if p in live_pane_ids}
+        self._stale_strikes &= self.pending_prompts.keys()
 
         if list_screen is not None:
             list_screen.render_agents()
@@ -796,9 +802,22 @@ class HerdrMobileApp(App):
                 continue
             agent = next((a for a in self.agents if a.pane_id == pane_id), None)
             if agent and agent.status in ("idle", "blocked"):
-                self.notify(f"Prompt may not have arrived (agent still {agent.status})",
-                            title="prompt stall", severity="warning")
-            del self.pending_prompts[pane_id]
+                if pane_id in self._stale_strikes:
+                    # Second consecutive stale-and-still-idle/blocked
+                    # observation: warn and stop tracking.
+                    self.notify(f"Prompt may not have arrived (agent still {agent.status})",
+                                title="prompt stall", severity="warning")
+                    del self.pending_prompts[pane_id]
+                    self._stale_strikes.discard(pane_id)
+                else:
+                    # First strike: give it one more refresh before concluding
+                    # the prompt actually stalled.
+                    self._stale_strikes.add(pane_id)
+            else:
+                # Any different status (agent progressed, or is gone) drops
+                # silently, strike or not.
+                del self.pending_prompts[pane_id]
+                self._stale_strikes.discard(pane_id)
 
     def cycle_agent(self, current: str, delta: int) -> None:
         if not self.agents:

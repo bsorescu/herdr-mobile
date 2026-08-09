@@ -305,7 +305,10 @@ def _capture_notifications(app, monkeypatch):
     return notifications
 
 
-async def test_stall_warns_when_agent_stays_idle(fake_client, monkeypatch):
+async def test_stall_first_strike_is_silent(fake_client, monkeypatch):
+    # A single stale-and-still-idle observation isn't enough to warn: list-poll
+    # data can lag up to LIST_POLL_SECONDS behind a read that already saw
+    # progress, so the first strike just marks the entry and waits.
     import herdr_mobile as hr
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
@@ -316,7 +319,28 @@ async def test_stall_warns_when_agent_stays_idle(fake_client, monkeypatch):
         await pilot.press("enter")
         assert "w7:p2" in app.pending_prompts
         app.pending_prompts["w7:p2"] -= hr.STALL_SECONDS + 1  # age the entry
+
         app.refresh_agents()
+        await pilot.pause()
+        assert "w7:p2" in app.pending_prompts  # still tracked, not yet warned
+        assert not any(kw.get("severity") == "warning" for _, kw in notifications)
+
+
+async def test_stall_warns_on_second_consecutive_strike(fake_client, monkeypatch):
+    import herdr_mobile as hr
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        notifications = _capture_notifications(app, monkeypatch)
+        await open_detail(app, pilot, "w7:p2")  # idle agent
+        await pilot.press("i")
+        await pilot.press(*"hi")
+        await pilot.press("enter")
+        assert "w7:p2" in app.pending_prompts
+        app.pending_prompts["w7:p2"] -= hr.STALL_SECONDS + 1  # age the entry
+
+        app.refresh_agents()  # first strike: silent
+        await pilot.pause()
+        app.refresh_agents()  # second consecutive strike: warn
         await pilot.pause()
         assert "w7:p2" not in app.pending_prompts  # consumed + warned
         warnings = [(msg, kw) for msg, kw in notifications if kw.get("severity") == "warning"]
@@ -347,6 +371,37 @@ async def test_stall_silent_when_agent_progressed(fake_client, monkeypatch):
         ]
         app.pending_prompts["w7:p2"] -= hr.STALL_SECONDS + 1  # age the entry
         app.refresh_agents()
+        await pilot.pause()
+        assert "w7:p2" not in app.pending_prompts  # consumed silently
+        assert not any(kw.get("severity") == "warning" for _, kw in notifications)
+
+
+async def test_stall_silent_if_agent_progresses_after_first_strike(fake_client, monkeypatch):
+    # First refresh sees the agent still idle/blocked (a strike); before the
+    # second refresh the agent progresses to "working" — no warning must
+    # ever fire, and the earlier strike must not carry over.
+    import herdr_mobile as hr
+    from herdr_mobile import AgentInfo
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        notifications = _capture_notifications(app, monkeypatch)
+        await open_detail(app, pilot, "w7:p2")  # idle agent
+        await pilot.press("i")
+        await pilot.press(*"hi")
+        await pilot.press("enter")
+        assert "w7:p2" in app.pending_prompts
+        app.pending_prompts["w7:p2"] -= hr.STALL_SECONDS + 1  # age the entry
+
+        app.refresh_agents()  # first strike
+        await pilot.pause()
+        assert "w7:p2" in app.pending_prompts
+
+        fake_client.agents = [
+            AgentInfo(pane_id=a.pane_id, kind=a.kind, status="working", cwd=a.cwd, name=a.name)
+            if a.pane_id == "w7:p2" else a
+            for a in fake_client.agents
+        ]
+        app.refresh_agents()  # sees progress before a second strike
         await pilot.pause()
         assert "w7:p2" not in app.pending_prompts  # consumed silently
         assert not any(kw.get("severity") == "warning" for _, kw in notifications)
