@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import subprocess
 import time
 from dataclasses import dataclass
@@ -43,6 +44,39 @@ def effective_status(agent: AgentInfo, seen: set[str]) -> str:
 
 def sort_agents(agents: list[AgentInfo], seen: set[str]) -> list[AgentInfo]:
     return sorted(agents, key=lambda a: (STATUS_ORDER.get(effective_status(a, seen), 99), a.pane_id))
+
+
+_ALNUM_RE = re.compile(r"[0-9A-Za-z]")
+_CHROME_RE = re.compile(
+    r"⏵⏵|auto mode on|bypassing permissions|plan mode on|esc to interrupt|"
+    r"\? for shortcuts|ctrl\+p to cycle",
+    re.IGNORECASE,
+)
+_TRIM_CAP = 15
+
+
+def trim_trailing_chrome(text: str) -> str:
+    """Drop trailing agent-TUI chrome (frames, blank lines, footer/status bar).
+
+    Works from the last line upward, dropping a line if it has no
+    alphanumeric characters (blank lines, box-drawing runs, a bare ❯) or it
+    matches a known Claude Code footer/status pattern. Stops at the first
+    line matching neither rule, so real content (including a spinner line
+    like "✻ Working…", which has letters) is preserved. Only ever trims the
+    trailing _TRIM_CAP lines — decoration in the middle of the text is left
+    untouched.
+    """
+    lines = text.split("\n")
+    keep_until = len(lines)
+    trimmed = 0
+    while keep_until > 0 and trimmed < _TRIM_CAP:
+        line = lines[keep_until - 1]
+        if not _ALNUM_RE.search(line) or _CHROME_RE.search(line):
+            keep_until -= 1
+            trimmed += 1
+            continue
+        break
+    return "\n".join(lines[:keep_until])
 
 
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
@@ -337,6 +371,9 @@ class AgentDetailScreen(Screen):
         # stray \r here too so Text.from_ansi never treats it as a
         # carriage-return-overwrite (which wipes all but the last line).
         content = content.replace("\r\n", "\n").replace("\r", "")
+        # Trim trailing agent-TUI chrome (separators, empty prompt box, footer
+        # status line) — display-only, the client stays a faithful reader.
+        content = trim_trailing_chrome(content)
         log.write(Text.from_ansi(content))
         # immediate=True: apply synchronously so scroll_y/max_scroll_y are consistent
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly

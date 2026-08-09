@@ -57,6 +57,25 @@ async def test_output_survives_crlf_line_endings(fake_client):
         assert "last line" in rendered
 
 
+async def test_output_trims_trailing_claude_chrome(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join([
+        "some real agent output",
+        "the last real line of content",
+        "",
+        "────────",
+        "❯",
+        "────────",
+        "⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
+    ])
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "auto mode on" not in rendered
+        assert "the last real line of content" in rendered
+
+
 async def test_header_shows_identity_and_status(fake_client):
     app = HerdrRemoteApp(client=fake_client)
     async with app.run_test() as pilot:
