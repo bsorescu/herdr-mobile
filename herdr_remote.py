@@ -117,10 +117,11 @@ class HerdrClient:
             self._call("pane", "send-keys", pane_id, key)
 
 
+from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Static
+from textual.widgets import DataTable, Footer, Header, RichLog, Static
 
 STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
 LIST_POLL_SECONDS = 3.0
@@ -201,10 +202,54 @@ class AgentDetailScreen(Screen):
     def __init__(self, pane_id: str) -> None:
         super().__init__()
         self.pane_id = pane_id
+        self.follow = True
 
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
+        yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False)
         yield Footer()
+
+    def on_mount(self) -> None:
+        self.refresh_header()
+        self.refresh_output()
+        self.watch(self.query_one(RichLog), "scroll_y", self.on_scroll_moved, init=False)
+        self.set_interval(READ_POLL_SECONDS, self._tick)
+
+    def _tick(self) -> None:
+        if self.app.screen is not self:
+            return
+        self.refresh_header()
+        self.refresh_output()
+
+    def _agent(self) -> AgentInfo | None:
+        for a in self.app.agents:
+            if a.pane_id == self.pane_id:
+                return a
+        return None
+
+    def refresh_header(self) -> None:
+        a = self._agent()
+        if a is None:
+            return
+        st = effective_status(a, self.app.seen)
+        self.query_one("#detail-header", Static).update(
+            f"{a.pane_id} · {a.kind} · {a.project} — {STATUS_ICONS.get(st, '?')} {st}")
+
+    def refresh_output(self) -> None:
+        try:
+            content = self.app.client.read_agent(self.pane_id)
+        except HerdrError as err:
+            self.app.handle_agent_error(self.pane_id, err)
+            return
+        log = self.query_one(RichLog)
+        log.clear()
+        log.write(Text.from_ansi(content))
+        if self.follow:
+            log.scroll_end(animate=False)
+
+    def on_scroll_moved(self) -> None:
+        log = self.query_one(RichLog)
+        self.follow = bool(log.is_vertical_scroll_end)
 
     def action_back(self) -> None:
         self.app.pop_screen()
@@ -234,6 +279,9 @@ class HerdrRemoteApp(App):
 
     def open_agent(self, pane_id: str) -> None:
         self.push_screen(AgentDetailScreen(pane_id))
+
+    def handle_agent_error(self, pane_id: str, err: HerdrError) -> None:
+        self.notify(err.message, title=err.code, severity="error")
 
 
 def main() -> None:
