@@ -473,3 +473,26 @@ async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
         assert "n/p" in str(hint.render())
         await pilot.press("k")  # toggle the bar off
         assert screen.query_one("#remote-bar").display is False
+
+
+async def test_detail_footer_fits_44_cols_and_hides_palette(fake_client):
+    # Regression: at 44 columns the Footer used to truncate ("p Pr|^p
+    # palette"), and the command-palette entry crowded out real bindings.
+    # Every label the user relies on tapping must actually fit on screen,
+    # and the palette entry must be gone (while ctrl+p itself still works —
+    # that's an App-level binding, untouched by Footer(show_command_palette)).
+    from textual.widgets import Footer
+    from textual.widgets._footer import FooterKey
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:
+        screen = await open_detail(app, pilot)
+        footer = screen.query_one(Footer)
+        keys = list(footer.query(FooterKey))
+        descriptions = {k.description for k in keys}
+        assert {"Back", "Prompt", "Keys", "Agent", "Scroll"} <= descriptions
+        assert not any("palette" in k.description.lower() for k in keys)
+        # Nothing renders past the 44-column screen edge — proves nothing
+        # got silently clipped out.
+        for k in keys:
+            assert k.region.right <= 44, f"{k.key!r} {k.description!r} clipped: {k.region}"

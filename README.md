@@ -139,6 +139,8 @@ a bare Termius session works with no extra setup — no `Esc` key needed, no
 extra-keys row required. An extra-keys row (for `Esc`, `Tab`, arrows) is
 optional convenience, not required — the remote-control bar exists
 specifically so you don't need one to answer a `blocked` agent's prompt.
+The footer entries themselves are tappable too — tapping `Keys` toggles the
+remote-control bar, so `k` is never required on touch.
 
 ## Troubleshooting
 

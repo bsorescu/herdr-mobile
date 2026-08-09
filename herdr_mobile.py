@@ -305,7 +305,11 @@ class AgentListScreen(Screen):
         table.add_columns("st", "agent", "project", "pane")
         yield table
         yield Static("", id="list-error")
-        yield Footer()
+        # show_command_palette=False: hides the "^p palette" footer entry,
+        # which crowds real bindings out at phone width. ctrl+p still opens
+        # the command palette (used for screenshots) — this only affects the
+        # Footer's own display, not the App-level ctrl+p binding.
+        yield Footer(show_command_palette=False)
 
     def on_mount(self) -> None:
         self.query_one("#list-error", Static).display = False
@@ -377,9 +381,9 @@ class AgentDetailScreen(Screen):
         Binding("q", "back", "Back"),
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
-        Binding("k", "toggle_remote", "Remote"),
-        Binding("n", "next_agent", "Next"),
-        Binding("p", "prev_agent", "Prev"),
+        Binding("k", "toggle_remote", "Keys"),
+        Binding("n", "next_agent", "Agent", key_display="n/p"),
+        Binding("p", "prev_agent", "Agent", show=False),
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
         Binding("d", "scroll_output('down')", "Scroll", show=False),
     ]
@@ -438,7 +442,14 @@ class AgentDetailScreen(Screen):
                     yield Button(label, id=f"rk-{key_name}")
             yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
-        yield Footer()
+        # show_command_palette=False: hides the "^p palette" footer entry,
+        # which crowds real bindings out at phone width. ctrl+p still opens
+        # the command palette (used for screenshots) — this only affects the
+        # Footer's own display, not the App-level ctrl+p binding. compact=True
+        # trims the per-entry padding so all 5 labels (Back/Prompt/Keys/
+        # Agent/Scroll) actually fit within a 44-column phone screen instead
+        # of getting clipped.
+        yield Footer(show_command_palette=False, compact=True)
 
     def on_mount(self) -> None:
         self.query_one("#remote-bar").display = False
