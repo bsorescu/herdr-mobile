@@ -18,7 +18,8 @@ letter keys (no reliance on the physical Esc key).
 ## Architecture
 
 - Single Python file `herdr_remote.py` with PEP 723 inline metadata; only
-  dependency is `textual`. Run via `uv run`.
+  dependency is `textual`. Run via `uv run` (`uv` installed via Homebrew —
+  not present on the Mac as of 2026-08-09).
 - Launcher: executable wrapper script `herdr-remote` installed to
   `~/.local/bin` (on PATH in interactive shells) that execs `uv run` on the
   repo's `herdr_remote.py` by absolute path, so it works from any cwd after
@@ -41,9 +42,16 @@ The only module that knows about subprocess. Methods:
   agent kind, name, agent_status, cwd, workspace/tab ids).
 - `read_agent(pane_id, lines=200)` → `herdr agent read <pane_id> --source
   recent-unwrapped --format ansi --lines 200` → ANSI text.
-- `prompt_agent(pane_id, text)` → `herdr agent prompt <pane_id> <text>`
-  (no `--wait`; fire-and-forget).
-- `send_key(pane_id, key)` → `herdr agent send-keys <pane_id> <key>`.
+- `prompt_agent(pane_id, text)` → `herdr pane run <pane_id> <text>` (sends
+  text + Enter atomically; fire-and-forget).
+- `send_key(pane_id, key)` → `herdr pane send-keys <pane_id> <key>` for
+  special keys (up, down, enter, esc, tab), `herdr pane send-text` for
+  single printable characters (y, n, digits).
+
+Command surface verified against the installed herdr 0.7.3 (2026-08-09):
+this build has no `agent prompt`/`agent send-keys`; the pane-level commands
+above are the correct equivalents. Re-verify against `herdr agent`/`herdr
+pane` help if herdr is updated.
 
 CLI server errors arrive as JSON on stderr with exit 1; syntax errors exit 2.
 The client raises a typed error carrying the parsed message; screens render
@@ -86,8 +94,10 @@ list. The design never requires the physical Esc key.
 
 ### Toasts
 
-Non-blocking notifications for: prompt sent, `agent_prompt_stalled` (the
-prompt text stays in the input for retry), agent disappeared, CLI errors.
+Non-blocking notifications for: prompt sent, prompt stall (the agent's
+status is still `idle`/`blocked` ~6 s after a prompt — detected client-side
+from the list poll, since herdr 0.7.3 has no stalled error; the prompt text
+stays in the input for retry), agent disappeared, CLI errors.
 
 ## Data flow
 
@@ -107,8 +117,8 @@ prompt text stays in the input for retry), agent disappeared, CLI errors.
   retry action; the app does not crash.
 - Agent disappears (pane closed) while its detail is open → toast + return
   to the list.
-- `agent_prompt_stalled` (no lifecycle change within 5 s of a prompt) →
-  toast; input text preserved.
+- Prompt stall (no lifecycle change within ~6 s of a prompt, detected from
+  the list poll) → toast; input text preserved.
 - Any other CLI error → toast with the parsed server message.
 
 ## Testing
