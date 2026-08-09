@@ -1,0 +1,18 @@
+id = "herdr-mobile"
+name = "Herdr Mobile"
+version = "0.1.0"
+min_herdr_version = "0.7.3"
+description = "Phone-friendly control panel for your coding agents: triage list, live output, prompts, and one-tap unblocking. Built for SSH from a phone, works great in a pane too."
+platforms = ["macos", "linux"]
+
+[[panes]]
+id = "panel"
+title = "Herdr Mobile panel"
+placement = "overlay"
+command = ["uv", "run", "herdr_mobile.py"]
+
+[[actions]]
+id = "open-panel"
+title = "Open Herdr Mobile panel"
+contexts = ["workspace"]
+command = ["uv", "run", "herdr_mobile.py"]
