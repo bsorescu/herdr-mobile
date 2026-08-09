@@ -39,6 +39,24 @@ async def test_output_renders_and_updates(fake_client):
         assert "NEW CONTENT" in rendered
 
 
+async def test_output_survives_crlf_line_endings(fake_client):
+    # Regression: herdr's `agent read` returns \r\n-terminated lines. Rich's
+    # Text.from_ansi treats a trailing \r as carriage-return-overwrite, which
+    # wipes every line but the last at render time, leaving the output pane
+    # blank except for one line. The fake client returns raw text unmodified
+    # (bypassing HerdrClient's own normalization), so this exercises the
+    # screen's own defensive stripping in refresh_output before from_ansi.
+    fake_client.reads["wA:p1"] = "\x1b[32mearly line\x1b[0m\r\nmiddle line\r\nlast line"
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "early line" in rendered
+        assert "middle line" in rendered
+        assert "last line" in rendered
+
+
 async def test_header_shows_identity_and_status(fake_client):
     app = HerdrRemoteApp(client=fake_client)
     async with app.run_test() as pilot:

@@ -44,6 +44,19 @@ def test_read_agent_returns_text_and_uses_ansi_source():
                             "--lines", "120"]
 
 
+def test_read_agent_normalizes_crlf_line_endings():
+    # herdr's `agent read` returns lines terminated with \r\n. Rich's
+    # Text.from_ansi treats a trailing \r as carriage-return-overwrite, which
+    # wipes every line but the last at render time. The client must strip it.
+    payload = {"id": "cli:agent:read", "result": {"read": {
+        "format": "ansi", "pane_id": "w3:p1", "source": "recent_unwrapped",
+        "text": "\x1b[32mline one\x1b[0m\r\nline two\r\nline three"}}}
+    run = fake_run(stdout=json.dumps(payload))
+    text = HerdrClient(run_cli=run).read_agent("w3:p1")
+    assert "\r" not in text
+    assert text == "\x1b[32mline one\x1b[0m\nline two\nline three"
+
+
 def test_prompt_agent_uses_pane_run():
     run = fake_run(stdout='{"id":"x","result":{}}')
     HerdrClient(run_cli=run).prompt_agent("w3:p1", "fix the bug")

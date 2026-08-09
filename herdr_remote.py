@@ -106,7 +106,11 @@ class HerdrClient:
     def read_agent(self, pane_id: str, lines: int = 200) -> str:
         payload = self._call("agent", "read", pane_id, "--source", "recent-unwrapped",
                              "--format", "ansi", "--lines", str(lines))
-        return payload["result"]["read"]["text"]
+        text = payload["result"]["read"]["text"]
+        # herdr returns \r\n-terminated lines. Rich's Text.from_ansi treats a
+        # trailing \r as carriage-return-overwrite, wiping every line but the
+        # last at render time, so normalize line endings here.
+        return text.replace("\r\n", "\n").replace("\r", "")
 
     def prompt_agent(self, pane_id: str, text: str) -> None:
         self._call("pane", "run", pane_id, text)
@@ -329,6 +333,10 @@ class AgentDetailScreen(Screen):
             return
         log = self.query_one(RichLog)
         log.clear()
+        # Belt and braces: HerdrClient already normalizes \r\n, but strip any
+        # stray \r here too so Text.from_ansi never treats it as a
+        # carriage-return-overwrite (which wipes all but the last line).
+        content = content.replace("\r\n", "\n").replace("\r", "")
         log.write(Text.from_ansi(content))
         # immediate=True: apply synchronously so scroll_y/max_scroll_y are consistent
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly
