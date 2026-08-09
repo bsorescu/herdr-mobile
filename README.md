@@ -37,6 +37,18 @@ welcome. Windows is untested and undeclared.
 
 ## Install
 
+### Quick install
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/bsorescu/herdr-mobile/main/install.sh | sh
+```
+
+Installs [`uv`](https://docs.astral.sh/uv/) first if it's missing, then runs
+`uv tool install --force` to install (or upgrade) the `herdr-mobile`
+command onto your `PATH`. Safe to re-run any time to upgrade. See
+`install.sh` in the repo root for exactly what it does before piping it to
+`sh`, as always with any curl-pipe-to-shell install.
+
 ### Option 1: clone + run
 
 ```bash
