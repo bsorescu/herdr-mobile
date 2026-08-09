@@ -47,3 +47,46 @@ async def test_scroll_up_pauses_follow(fake_client):
         log.scroll_end(animate=False, immediate=True)
         screen.on_scroll_moved()
         assert screen.follow is True
+
+
+async def test_paused_follow_ignores_tick_refresh(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        log.scroll_up(animate=False)
+        screen.on_scroll_moved()
+        assert screen.follow is False
+        rendered_before = "\n".join(str(strip) for strip in log.lines)
+
+        # A sliding "last 200 lines" window would silently swap the text under the
+        # user's eyes if refresh_output() fetched while paused. It must not.
+        fake_client.reads["wA:p1"] = "SHOULD NOT APPEAR"
+        screen._tick()
+        await pilot.pause()
+
+        rendered_after = "\n".join(str(strip) for strip in log.lines)
+        assert rendered_after == rendered_before
+        assert "SHOULD NOT APPEAR" not in rendered_after
+
+
+async def test_returning_to_bottom_refreshes_immediately(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        log.scroll_up(animate=False)
+        screen.on_scroll_moved()
+        assert screen.follow is False
+
+        fake_client.reads["wA:p1"] = "FRESH CONTENT"
+        log.scroll_end(animate=False, immediate=True)
+        screen.on_scroll_moved()
+        assert screen.follow is True
+
+        # No pilot.pause()/tick wait: the scroll-back-to-bottom path itself
+        # must trigger the refresh synchronously.
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "FRESH CONTENT" in rendered

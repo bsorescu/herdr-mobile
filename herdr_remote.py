@@ -236,6 +236,11 @@ class AgentDetailScreen(Screen):
             f"{a.pane_id} · {a.kind} · {a.project} — {STATUS_ICONS.get(st, '?')} {st}")
 
     def refresh_output(self) -> None:
+        if not self.follow:
+            # User scrolled up to read history: freeze content in place. read_agent
+            # returns a sliding window, so fetching now would silently replace the
+            # text under the user's eyes even though scroll_y hasn't moved.
+            return
         try:
             content = self.app.client.read_agent(self.pane_id)
         except HerdrError as err:
@@ -244,12 +249,19 @@ class AgentDetailScreen(Screen):
         log = self.query_one(RichLog)
         log.clear()
         log.write(Text.from_ansi(content))
-        if self.follow:
-            log.scroll_end(animate=False)
+        # immediate=True: apply synchronously so scroll_y/max_scroll_y are consistent
+        # right away (a deferred scroll_end leaves scroll_y stale against the freshly
+        # rewritten content, which corrupts the next is_vertical_scroll_end check).
+        log.scroll_end(animate=False, immediate=True)
 
     def on_scroll_moved(self) -> None:
         log = self.query_one(RichLog)
+        was_following = self.follow
         self.follow = bool(log.is_vertical_scroll_end)
+        if self.follow and not was_following:
+            # Returning to the bottom: don't make the user wait up to
+            # READ_POLL_SECONDS for the frozen content to catch up.
+            self.refresh_output()
 
     def action_back(self) -> None:
         self.app.pop_screen()
