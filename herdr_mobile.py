@@ -180,6 +180,36 @@ def normalize_bullet_spacing(text: str) -> str:
     )
 
 
+_DIALOG_OPTION_RE = re.compile(r"^\s*(?:❯\s*)?(\d{1,3})\.\s")
+_DIALOG_OPTION_WINDOW_LINES = 30
+_DIALOG_OPTION_MAX = 9
+
+
+def count_dialog_options(text: str) -> int:
+    """Scan the trailing _DIALOG_OPTION_WINDOW_LINES lines of agent output
+    for numbered-option dialog lines (e.g. "❯ 1. Yes", "  6. Never ask
+    again") and return the highest option number seen, capped at
+    _DIALOG_OPTION_MAX. Returns 0 when no numbered option line is found.
+
+    Used to size the remote-control bar's digit row to the actual number of
+    options in a blocked prompt, instead of a fixed 1-3. Normalizes CRLF and
+    strips ANSI itself, so it can be called directly on raw agent output.
+    Only the trailing window is scanned — a numbered-looking line earlier in
+    scrollback (e.g. from a past, already-answered prompt) is ignored. A
+    normal-prose line that happens to start with "<digit>. " is
+    indistinguishable from a real option line and will be counted — an
+    accepted imperfection of a purely textual heuristic.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    lines = text.split("\n")[-_DIALOG_OPTION_WINDOW_LINES:]
+    highest = 0
+    for line in lines:
+        match = _DIALOG_OPTION_RE.match(strip_ansi(line))
+        if match:
+            highest = max(highest, int(match.group(1)))
+    return min(highest, _DIALOG_OPTION_MAX)
+
+
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
@@ -287,7 +317,8 @@ def build_header_text(agent: AgentInfo, status: str) -> Text:
 
 REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab",
                "escape": "esc", "y": "y", "n": "n",
-               "1": "1", "2": "2", "3": "3"}
+               "1": "1", "2": "2", "3": "3", "4": "4", "5": "5", "6": "6",
+               "7": "7", "8": "8", "9": "9"}
 
 
 class AgentListScreen(Screen):
@@ -423,6 +454,8 @@ class AgentDetailScreen(Screen):
         self.pane_id = pane_id
         self.follow = True
         self._auto_shown = False
+        self._bar_manual = False  # bar shown via "k" (action_toggle_remote), not auto-shown
+        self._last_read = ""  # last fetched content, for sizing the digit row
 
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
@@ -435,11 +468,15 @@ class AgentDetailScreen(Screen):
         with Vertical(id="remote-bar"):
             with Horizontal(id="remote-row1"):
                 for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"),
-                                        ("esc", "Esc"), ("y", "y")]:
+                                        ("esc", "Esc"), ("y", "y"), ("n", "n")]:
                     yield Button(label, id=f"rk-{key_name}")
+            # Digit row: all 9 pre-created (simpler and less flicker-prone than
+            # mounting/removing Buttons), only 1..count visible at a time —
+            # see _set_digit_count(). Its own row so it can grow independently
+            # of row1 and still fit a 44-col phone screen for the common case.
             with Horizontal(id="remote-row2"):
-                for key_name, label in [("n", "n"), ("1", "1"), ("2", "2"), ("3", "3")]:
-                    yield Button(label, id=f"rk-{key_name}")
+                for i in range(1, 10):
+                    yield Button(str(i), id=f"rk-{i}")
             yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
         # show_command_palette=False: hides the "^p palette" footer entry,
@@ -453,10 +490,27 @@ class AgentDetailScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#remote-bar").display = False
+        self._set_digit_count(3)
         self.refresh_header()
         self.refresh_output()
         self.watch(self.query_one(RichLog), "scroll_y", self.on_scroll_moved, init=False)
         self.set_interval(READ_POLL_SECONDS, self._tick)
+
+    def _set_digit_count(self, count: int) -> None:
+        for i in range(1, 10):
+            self.query_one(f"#rk-{i}", Button).display = i <= count
+
+    def _sync_digit_buttons(self) -> None:
+        """Size the digit row to the actual dialog: 1..max(detected, 3) while
+        blocked and the bar is visible, otherwise the 1-3 fallback."""
+        a = self._agent()
+        st = effective_status(a, self.app.seen) if a is not None else None
+        bar = self.query_one("#remote-bar")
+        if st == "blocked" and bar.display:
+            count = max(count_dialog_options(self._last_read), 3)
+        else:
+            count = 3
+        self._set_digit_count(count)
 
     def _tick(self) -> None:
         if self.app.screen is not self:
@@ -484,10 +538,17 @@ class AgentDetailScreen(Screen):
             return
         st = effective_status(a, self.app.seen)
         self.query_one("#detail-header", Static).update(build_header_text(a, st))
+        bar = self.query_one("#remote-bar")
         if st == "blocked" and not self._auto_shown:
-            self.query_one("#remote-bar").display = True
+            bar.display = True
             self._auto_shown = True
+            self._bar_manual = False
+            self._sync_digit_buttons()
         elif st != "blocked":
+            # Auto-hide only a bar that WE auto-showed, not one the user
+            # opened manually via "k" — that stays open across the flip.
+            if bar.display and not self._bar_manual:
+                bar.display = False
             self._auto_shown = False
 
     def refresh_output(self) -> None:
@@ -501,6 +562,7 @@ class AgentDetailScreen(Screen):
         except HerdrError as err:
             self.app.handle_agent_error(self.pane_id, err)
             return
+        self._last_read = content  # for _sync_digit_buttons' count_dialog_options
         log = self.query_one(RichLog)
         log.clear()
         # Belt and braces: HerdrClient already normalizes \r\n, but strip any
@@ -524,6 +586,7 @@ class AgentDetailScreen(Screen):
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly
         # rewritten content, which corrupts the next is_vertical_scroll_end check).
         log.scroll_end(animate=False, immediate=True)
+        self._sync_digit_buttons()
 
     def on_scroll_moved(self) -> None:
         log = self.query_one(RichLog)
@@ -543,6 +606,9 @@ class AgentDetailScreen(Screen):
     def action_toggle_remote(self) -> None:
         bar = self.query_one("#remote-bar")
         bar.display = not bar.display
+        self._bar_manual = bar.display
+        if bar.display:
+            self._sync_digit_buttons()
 
     def action_scroll_output(self, direction: str) -> None:
         # Screen-level binding so it works regardless of which widget has focus

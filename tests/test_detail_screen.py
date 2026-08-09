@@ -365,6 +365,14 @@ async def test_visible_bar_forwards_whitelisted_keys(fake_client):
         assert fake_client.keys == [("wA:p1", "down"), ("wA:p1", "enter"), ("wA:p1", "y")]
 
 
+async def test_visible_bar_forwards_digits_four_through_nine(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "wA:p1")
+        await pilot.press("6")
+        assert ("wA:p1", "6") in fake_client.keys
+
+
 async def test_buttons_send_keys(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
@@ -374,17 +382,33 @@ async def test_buttons_send_keys(fake_client):
 
 
 async def test_remote_bar_fits_portrait_phone(fake_client):
+    # Blocked-with-6-options: the digit row grows to 1-6 (see
+    # test_digit_buttons_scale_to_dialog_option_count), which is the
+    # realistic worst case that must still fit a 44-col phone screen.
     from textual.widgets import Static
+    fake_client.reads["wA:p1"] = "\n".join([
+        "Allow this action?",
+        "❯ 1. Yes",
+        "  2. Yes, and don't ask again",
+        "  3. No, and tell Claude what to do differently",
+        "  4. Always allow for this project",
+        "  5. Always allow for this session",
+        "  6. Never ask again",
+    ])
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test(size=(44, 30)) as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         bar = screen.query_one("#remote-bar")
         assert bar.display is True
-        for key_name in ["up", "down", "enter", "esc", "y", "n", "1", "2", "3"]:
-            region = screen.query_one(f"#rk-{key_name}").region
+        for key_name in ["up", "down", "enter", "esc", "y", "n", "1", "2", "3", "4", "5", "6"]:
+            widget = screen.query_one(f"#rk-{key_name}")
+            assert widget.display is True
+            region = widget.region
             assert region.width > 0
             assert region.right <= 44, f"rk-{key_name} clipped: {region}"
             assert region.bottom <= 30, f"rk-{key_name} clipped: {region}"
+        for key_name in ["7", "8", "9"]:
+            assert screen.query_one(f"#rk-{key_name}").display is False
         hint = screen.query_one("#remote-hint", Static)
         hint_region = hint.region
         assert hint_region.width > 0
@@ -496,3 +520,79 @@ async def test_detail_footer_fits_44_cols_and_hides_palette(fake_client):
         # got silently clipped out.
         for k in keys:
             assert k.region.right <= 44, f"{k.key!r} {k.description!r} clipped: {k.region}"
+
+
+async def test_digit_buttons_scale_to_dialog_option_count(fake_client):
+    from textual.widgets import Button
+
+    fake_client.reads["wA:p1"] = "\n".join([
+        "Allow this action?",
+        "❯ 1. Yes",
+        "  2. Yes, and don't ask again",
+        "  3. No, and tell Claude what to do differently",
+        "  4. Always allow for this project",
+        "  5. Always allow for this session",
+        "  6. Never ask again",
+    ])
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        for i in range(1, 7):
+            assert screen.query_one(f"#rk-{i}", Button).display is True
+        for i in range(7, 10):
+            assert screen.query_one(f"#rk-{i}", Button).display is False
+        await pilot.click("#rk-6")
+        assert ("wA:p1", "6") in fake_client.keys
+
+
+async def test_digit_buttons_fall_back_to_three_without_a_dialog(fake_client):
+    from textual.widgets import Button
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked, no dialog in reads
+        for i in range(1, 4):
+            assert screen.query_one(f"#rk-{i}", Button).display is True
+        for i in range(4, 10):
+            assert screen.query_one(f"#rk-{i}", Button).display is False
+
+
+async def test_auto_shown_bar_hides_when_status_leaves_blocked(fake_client):
+    from herdr_mobile import AgentInfo
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        fake_client.agents = [
+            AgentInfo(pane_id=a.pane_id, kind=a.kind, status="working", cwd=a.cwd, name=a.name)
+            if a.pane_id == "wA:p1" else a
+            for a in fake_client.agents
+        ]
+        app.refresh_agents()
+        screen.refresh_header()
+        await pilot.pause()
+        assert screen.query_one("#remote-bar").display is False
+
+
+async def test_manually_opened_bar_stays_open_across_blocked_to_working(fake_client):
+    from herdr_mobile import AgentInfo
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        await pilot.press("k")  # close the auto-shown bar
+        assert screen.query_one("#remote-bar").display is False
+        await pilot.press("k")  # reopen it manually -> now user-driven
+        assert screen.query_one("#remote-bar").display is True
+
+        fake_client.agents = [
+            AgentInfo(pane_id=a.pane_id, kind=a.kind, status="working", cwd=a.cwd, name=a.name)
+            if a.pane_id == "wA:p1" else a
+            for a in fake_client.agents
+        ]
+        app.refresh_agents()
+        screen.refresh_header()
+        await pilot.pause()
+        assert screen.query_one("#remote-bar").display is True  # stays open: manual

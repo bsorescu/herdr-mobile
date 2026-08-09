@@ -3,6 +3,7 @@ from herdr_mobile import (
     PROJECT_CHIP_STYLE,
     build_header_text,
     collapse_wide_rules,
+    count_dialog_options,
     effective_status,
     normalize_bullet_spacing,
     sort_agents,
@@ -245,3 +246,61 @@ def test_normalize_bullet_spacing_only_touches_line_start():
 
 def test_normalize_bullet_spacing_tolerates_leading_whitespace():
     assert normalize_bullet_spacing("  ⏺main") == "  ⏺ main"
+
+
+def test_count_dialog_options_returns_highest_option_number():
+    text = "\n".join([
+        "Allow this action?",
+        "❯ 1. Yes",
+        "  2. Yes, and don't ask again",
+        "  3. No, and tell Claude what to do differently",
+        "  4. Always allow for this project",
+        "  5. Always allow for this session",
+        "  6. Never ask again",
+    ])
+    assert count_dialog_options(text) == 6
+
+
+def test_count_dialog_options_returns_zero_for_yes_no_only():
+    text = "Allow Bash command?\n> Yes / No"
+    assert count_dialog_options(text) == 0
+
+
+def test_count_dialog_options_returns_zero_when_no_dialog():
+    text = "\n".join(f"line {i}" for i in range(20))
+    assert count_dialog_options(text) == 0
+
+
+def test_count_dialog_options_caps_at_nine():
+    text = "\n".join(f"  {i}. option {i}" for i in range(1, 13))
+    assert count_dialog_options(text) == 9
+
+
+def test_count_dialog_options_only_scans_trailing_window():
+    # A numbered-looking line from a past, already-answered dialog, pushed
+    # out of the trailing 30-line window by newer output, must be ignored.
+    old_dialog = ["  9. old stale option"]
+    filler = [f"line {i}" for i in range(40)]
+    text = "\n".join(old_dialog + filler)
+    assert count_dialog_options(text) == 0
+
+
+def test_count_dialog_options_ignores_number_embedded_mid_sentence():
+    text = "I am running 3. fixtures in the suite right now"
+    assert count_dialog_options(text) == 0
+
+
+def test_count_dialog_options_accepts_false_positive_at_line_start():
+    # Known, accepted imperfection: a normal-prose line that happens to
+    # start with "<digit>. " is indistinguishable from a real dialog option.
+    text = "3. legacy items were removed from the changelog"
+    assert count_dialog_options(text) == 3
+
+
+def test_count_dialog_options_handles_ansi_wrapped_option_lines():
+    text = "\n".join([
+        "\x1b[32mAllow this action?\x1b[0m",
+        "\x1b[36m❯ 1. Yes\x1b[0m",
+        "\x1b[36m  2. No\x1b[0m",
+    ])
+    assert count_dialog_options(text) == 2

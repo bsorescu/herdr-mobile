@@ -122,15 +122,19 @@ send mouse-wheel events, and physical arrow keys only scroll the output
 while it's focused) — except while the prompt box is focused, where typing
 `u`/`d` inserts the characters instead, same as any other letter.
 
-The remote-control bar (`k`) shows tappable buttons — `↑ ↓ Enter Esc y n 1 2
-3` — for answering an agent's own approval prompts (e.g. a `blocked`
-Claude Code permission dialog) by key passthrough. It also auto-opens the
-first time an agent goes `blocked`. While it's open, physical keyboard keys
-are forwarded too for arrows/Enter/Tab/Esc/y/1/2/3 — **but not `n` or
-`p`**: those always cycle to the next/previous agent, bar open or closed,
-so to answer *No* you have to tap the on-screen `[n]` button (the bar's own
-hint line — `tap buttons to answer · n/p = next/prev agent` — says the
-same).
+The remote-control bar (`k`) shows tappable buttons — `↑ ↓ Enter Esc y n`
+plus a row of numbered options — for answering an agent's own approval
+prompts (e.g. a `blocked` Claude Code permission dialog) by key
+passthrough. The digit row adapts to the dialog: it shows `1 2 3` by
+default and grows up to `1`-`9` when the agent's own output has more
+numbered options (e.g. a 6-option permission menu shows `1`-`6`). It also
+auto-opens the first time an agent goes `blocked`, and auto-closes again
+once the agent leaves `blocked` — unless you opened it yourself with `k`,
+in which case it stays open. While it's open, physical keyboard keys are
+forwarded too for arrows/Enter/Tab/Esc/y/1-9 — **but not `n` or `p`**:
+those always cycle to the next/previous agent, bar open or closed, so to
+answer *No* you have to tap the on-screen `[n]` button (the bar's own hint
+line — `tap buttons to answer · n/p = next/prev agent` — says the same).
 
 ## Termius tips
 
