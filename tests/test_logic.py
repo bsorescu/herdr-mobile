@@ -163,27 +163,46 @@ def test_build_header_text_project_segment_has_green_chip_style():
     assert text.plain[span.start:span.end] == " AiMate "
 
 
-def test_collapse_wide_rules_collapses_input_box_border_keeps_name():
+def test_collapse_wide_rules_right_aligns_name_to_exact_width():
+    # Claude Code's input-box border: one ~170-char rule with the session
+    # name right-aligned on it. Rebuilt to exactly `width` visible chars,
+    # name chip-styled, everything before it collapsed rule fill.
     line = "─" * 150 + " herdr-remote-s0 ──"
-    result = collapse_wide_rules(line)
-    assert result == "─" * 20 + " herdr-remote-s0 ──"
-    assert len(result) < 44
+    width = 44
+    result = collapse_wide_rules(line, width=width)
+    visible = strip_ansi(result)
+    assert len(visible) == width
+    assert visible == "─" * 25 + " herdr-remote-s0 ──"
+    assert "\x1b[30;46mherdr-remote-s0\x1b[0m" in result
 
 
-def test_collapse_wide_rules_collapses_mid_content_divider():
-    line = "─" * 160
-    result = collapse_wide_rules(line)
-    assert result == "─" * 20
+def test_collapse_wide_rules_pure_divider_fills_exact_width():
+    line = "─" * 160  # no other text: a plain mid-content divider
+    width = 44
+    result = collapse_wide_rules(line, width=width)
+    assert result == "─" * width
 
 
 def test_collapse_wide_rules_leaves_short_rules_untouched():
     line = "── ok ──"
-    result = collapse_wide_rules(line)
+    result = collapse_wide_rules(line, width=44)
     assert result == line
 
 
 def test_collapse_wide_rules_handles_ansi_wrapped_rule_run():
     line = "\x1b[38;2;100;100;100m" + "─" * 150 + "\x1b[0m"
-    result = collapse_wide_rules(line)
+    result = collapse_wide_rules(line, width=20)
     assert result == "─" * 20
     assert "\x1b" not in result
+
+
+def test_collapse_wide_rules_emits_bare_chip_when_text_exceeds_width():
+    line = "─" * 150 + " a-very-long-session-name-that-does-not-fit ──"
+    result = collapse_wide_rules(line, width=10)
+    assert result == "\x1b[30;46ma-very-long-session-name-that-does-not-fit\x1b[0m"
+
+
+def test_collapse_wide_rules_falls_back_to_default_width_when_invalid():
+    line = "─" * 160
+    result = collapse_wide_rules(line, width=0)
+    assert result == "─" * 40  # _COLLAPSE_FALLBACK_WIDTH

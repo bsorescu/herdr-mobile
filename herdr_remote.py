@@ -101,32 +101,61 @@ def trim_trailing_chrome(text: str) -> str:
 
 _RULE_CHARS = "─━═╌┄┈"
 _COLLAPSE_MAX_RUN = 20
+_COLLAPSE_FALLBACK_WIDTH = 40
+_RULE_CHIP_STYLE = "\x1b[30;46m"  # black on cyan — closest to Claude Code's own chip
+_RULE_CHIP_RESET = "\x1b[0m"
 
 
-def collapse_wide_rules(text: str, max_run: int = _COLLAPSE_MAX_RUN) -> str:
+def collapse_wide_rules(
+    text: str, max_run: int = _COLLAPSE_MAX_RUN, width: int = _COLLAPSE_FALLBACK_WIDTH
+) -> str:
     """Collapse over-long horizontal-rule runs (e.g. Claude Code's ~170-char
-    input-box border, or full-width message dividers) to at most max_run
-    characters.
+    input-box border, or full-width message dividers) to fit the actual
+    available width, right-aligning any name/label carried on the line.
 
     At a phone width, RichLog wraps these into several rows that are pure
     rule characters plus one row with a name fragment (e.g. a right-aligned
     session name on the input-box border) — a wall of "stripe" rows with no
     useful information. Detection runs on the ANSI-stripped copy of each
-    line, since a run may be interrupted by SGR color-change codes; only
-    lines that actually contain an over-long run are rebuilt from that
-    stripped copy (losing any intra-line ANSI styling — acceptable, per the
-    caller, since these are decorative separator lines), so ordinary lines
-    keep their ANSI untouched. Non-rule text on a collapsed line (like that
-    right-aligned session name) is preserved verbatim.
+    line, since a run may be interrupted by SGR color-change codes.
+
+    For a line with an over-long run:
+      - No other text (a pure divider): collapsed to exactly `width` rule
+        characters — one full row, no wrap.
+      - Other text present (e.g. a right-aligned session name): rebuilt as
+        `<rule fill><space><chip><space>──`, right-aligned to exactly
+        `width` VISIBLE characters (the ANSI chip codes don't count). The
+        text fragment is wrapped in a black-on-cyan ANSI chip
+        (`_RULE_CHIP_STYLE`) since the original styling was lost when the
+        line was rebuilt from its ANSI-stripped copy. If the text alone is
+        already >= width, it's emitted alone (still chip-styled).
+
+    Lines with no over-long run are returned completely untouched (ANSI and
+    all). `width` <= 0 falls back to `_COLLAPSE_FALLBACK_WIDTH`.
     """
+    if width <= 0:
+        width = _COLLAPSE_FALLBACK_WIDTH
     rule_run_re = re.compile(rf"([{_RULE_CHARS}])\1{{{max_run},}}")
     out_lines = []
     for line in text.split("\n"):
         stripped = strip_ansi(line)
-        if rule_run_re.search(stripped):
-            out_lines.append(rule_run_re.sub(lambda m: m.group(1) * max_run, stripped))
-        else:
+        match = rule_run_re.search(stripped)
+        if not match:
             out_lines.append(line)
+            continue
+        rule_char = match.group(1)
+        residue = rule_run_re.sub("", stripped)
+        text_fragment = residue.strip(" " + _RULE_CHARS)
+        if not text_fragment:
+            out_lines.append(rule_char * width)
+            continue
+        chip = f"{_RULE_CHIP_STYLE}{text_fragment}{_RULE_CHIP_RESET}"
+        if len(text_fragment) >= width:
+            out_lines.append(chip)
+            continue
+        suffix = " ──"
+        fill = max(0, width - len(text_fragment) - 1 - len(suffix))
+        out_lines.append((rule_char * fill) + " " + chip + suffix)
     return "\n".join(out_lines)
 
 
@@ -442,8 +471,10 @@ class AgentDetailScreen(Screen):
         content = trim_trailing_chrome(content)
         # Collapse full-width rule runs (input-box borders, message dividers)
         # that would otherwise wrap into several useless "stripe" rows at
-        # phone width.
-        content = collapse_wide_rules(content)
+        # phone width. Use the RichLog's actual usable width so the collapsed
+        # rule fills the row without wrapping.
+        width = log.scrollable_content_region.width or _COLLAPSE_FALLBACK_WIDTH
+        content = collapse_wide_rules(content, width=width)
         log.write(Text.from_ansi(content))
         # immediate=True: apply synchronously so scroll_y/max_scroll_y are consistent
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly

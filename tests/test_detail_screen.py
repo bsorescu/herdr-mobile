@@ -106,16 +106,27 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
 async def test_output_collapses_wide_input_box_border(fake_client):
     # Regression: Claude Code's input-box border is one ~170-char rule line
     # with the session name right-aligned on it. At phone width RichLog
-    # wraps that into several useless all-rule "stripe" rows.
+    # wraps that into several useless all-rule "stripe" rows. It must be
+    # rebuilt right-aligned to the RichLog's actual usable width, with the
+    # name chip-styled (black on cyan).
     border = "─" * 150 + " herdr-remote-s0 ──"
     fake_client.reads["wA:p1"] = "\n".join(["some real content", border])
     app = HerdrRemoteApp(client=fake_client)
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(44, 30)) as pilot:  # portrait phone width
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
-        rendered = "\n".join(str(strip) for strip in log.lines)
-        assert "─" * 20 + " herdr-remote-s0" in rendered
-        assert "─" * 30 not in rendered
+        # The 170-char border collapses to exactly one row instead of
+        # wrapping into several useless all-rule "stripe" rows.
+        assert len(log.lines) == 2
+        assert log.lines[0].text == "some real content"
+        border_strip = log.lines[1]
+        assert border_strip.text.endswith("herdr-remote-s0 ──")
+        assert border_strip.cell_length <= log.size.width  # fits, doesn't wrap
+        # The name segment carries the black-on-cyan chip style.
+        name_segment = next(seg for seg in border_strip if seg.text == "herdr-remote-s0")
+        assert name_segment.style is not None
+        assert name_segment.style.bgcolor is not None
+        assert name_segment.style.color is not None
 
 
 async def test_header_shows_identity_and_status(fake_client):
