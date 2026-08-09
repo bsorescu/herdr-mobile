@@ -1,4 +1,4 @@
-from textual.widgets import RichLog
+from textual.widgets import Input, RichLog
 
 from herdr_remote import HerdrRemoteApp
 
@@ -90,3 +90,43 @@ async def test_returning_to_bottom_refreshes_immediately(fake_client):
         # must trigger the refresh synchronously.
         rendered = "\n".join(str(strip) for strip in log.lines)
         assert "FRESH CONTENT" in rendered
+
+
+async def test_prompt_sends_and_clears(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        assert isinstance(app.focused, Input)
+        await pilot.press(*"do it")
+        await pilot.press("enter")
+        assert fake_client.prompts == [("w3:p1", "do it")]
+        assert screen.query_one("#prompt", Input).value == ""
+
+
+async def test_prompt_error_keeps_text(fake_client):
+    from herdr_remote import HerdrError
+    fake_client.errors["prompt_agent"] = HerdrError("pane_busy", "pane not at prompt")
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        await pilot.press(*"do it")
+        await pilot.press("enter")
+        assert fake_client.prompts == []
+        assert screen.query_one("#prompt", Input).value == "do it"
+
+
+async def test_stall_warns_when_agent_stays_idle(fake_client, monkeypatch):
+    import herdr_remote as hr
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "w7:p2")  # idle agent
+        await pilot.press("i")
+        await pilot.press(*"hi")
+        await pilot.press("enter")
+        assert "w7:p2" in app.pending_prompts
+        app.pending_prompts["w7:p2"] -= hr.STALL_SECONDS + 1  # age the entry
+        app.refresh_agents()
+        await pilot.pause()
+        assert "w7:p2" not in app.pending_prompts  # consumed + warned

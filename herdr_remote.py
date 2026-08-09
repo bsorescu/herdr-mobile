@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 import os
 import subprocess
+import time
 from dataclasses import dataclass
 
 
@@ -121,11 +122,12 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, RichLog, Static
+from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
 
 STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
 LIST_POLL_SECONDS = 3.0
 READ_POLL_SECONDS = 2.0
+STALL_SECONDS = 6.0
 
 
 class AgentListScreen(Screen):
@@ -197,7 +199,11 @@ class AgentListScreen(Screen):
 
 
 class AgentDetailScreen(Screen):
-    BINDINGS = [Binding("q", "back", "Back"), Binding("escape", "back", show=False)]
+    BINDINGS = [
+        Binding("q", "back", "Back"),
+        Binding("escape", "back", show=False),
+        Binding("i", "focus_prompt", "Prompt"),
+    ]
 
     def __init__(self, pane_id: str) -> None:
         super().__init__()
@@ -207,6 +213,7 @@ class AgentDetailScreen(Screen):
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
         yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False)
+        yield Input(placeholder="prompt… (i to focus)", id="prompt")
         yield Footer()
 
     def on_mount(self) -> None:
@@ -266,6 +273,28 @@ class AgentDetailScreen(Screen):
     def action_back(self) -> None:
         self.app.pop_screen()
 
+    def action_focus_prompt(self) -> None:
+        self.query_one("#prompt", Input).focus()
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        text = event.value.strip()
+        if not text:
+            return
+        try:
+            self.app.client.prompt_agent(self.pane_id, text)
+        except HerdrError as err:
+            self.app.notify(err.message, title=err.code, severity="error")
+            return
+        event.input.value = ""
+        event.input.blur()
+        self.app.notify("Prompt sent", severity="information")
+        self.app.pending_prompts[self.pane_id] = time.monotonic()
+
+    def on_key(self, event) -> None:
+        if event.key == "escape" and isinstance(self.app.focused, Input):
+            self.app.focused.blur()
+            event.stop()
+
 
 class HerdrRemoteApp(App):
     def __init__(self, client) -> None:
@@ -273,6 +302,7 @@ class HerdrRemoteApp(App):
         self.client = client
         self.agents: list[AgentInfo] = []
         self.seen: set[str] = set()
+        self.pending_prompts: dict[str, float] = {}
 
     def on_mount(self) -> None:
         self.refresh_agents()
@@ -288,6 +318,16 @@ class HerdrRemoteApp(App):
         screen = self.screen_stack[-1] if self.screen_stack else None
         if isinstance(screen, AgentListScreen):
             screen.render_agents()
+
+        now = time.monotonic()
+        for pane_id, sent_at in list(self.pending_prompts.items()):
+            if now - sent_at < STALL_SECONDS:
+                continue
+            agent = next((a for a in self.agents if a.pane_id == pane_id), None)
+            if agent and agent.status in ("idle", "blocked"):
+                self.notify(f"Prompt may not have arrived (agent still {agent.status})",
+                            title="prompt stall", severity="warning")
+            del self.pending_prompts[pane_id]
 
     def open_agent(self, pane_id: str) -> None:
         self.push_screen(AgentDetailScreen(pane_id))
