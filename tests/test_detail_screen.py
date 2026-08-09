@@ -183,3 +183,41 @@ async def test_stall_silent_when_agent_progressed(fake_client, monkeypatch):
         await pilot.pause()
         assert "w7:p2" not in app.pending_prompts  # consumed silently
         assert not any(kw.get("severity") == "warning" for _, kw in notifications)
+
+
+async def test_remote_bar_hidden_then_toggles(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
+        bar = screen.query_one("#remote-bar")
+        assert bar.display is False
+        await pilot.press("k")
+        assert bar.display is True
+        await pilot.press("q")
+        assert bar.display is False
+        assert app.screen is screen  # q closed the bar, did NOT leave the detail screen
+
+
+async def test_remote_bar_autoshows_for_blocked(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked
+        assert screen.query_one("#remote-bar").display is True
+
+
+async def test_visible_bar_forwards_whitelisted_keys(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "wA:p1")
+        await pilot.press("down")
+        await pilot.press("enter")
+        await pilot.press("y")
+        assert fake_client.keys == [("wA:p1", "down"), ("wA:p1", "enter"), ("wA:p1", "y")]
+
+
+async def test_buttons_send_keys(fake_client):
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")
+        await pilot.click("#rk-esc")
+        assert ("wA:p1", "esc") in fake_client.keys

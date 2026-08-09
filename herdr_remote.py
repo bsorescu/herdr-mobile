@@ -121,13 +121,18 @@ class HerdrClient:
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
+from textual.containers import Horizontal
 from textual.screen import Screen
-from textual.widgets import DataTable, Footer, Header, Input, RichLog, Static
+from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, Static
 
 STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
 LIST_POLL_SECONDS = 3.0
 READ_POLL_SECONDS = 2.0
 STALL_SECONDS = 6.0
+
+REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab",
+               "escape": "esc", "y": "y", "n": "n",
+               "1": "1", "2": "2", "3": "3"}
 
 
 class AgentListScreen(Screen):
@@ -203,20 +208,28 @@ class AgentDetailScreen(Screen):
         Binding("q", "back", "Back"),
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
+        Binding("k", "toggle_remote", "Remote"),
     ]
 
     def __init__(self, pane_id: str) -> None:
         super().__init__()
         self.pane_id = pane_id
         self.follow = True
+        self._auto_shown = False
 
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
         yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False)
+        with Horizontal(id="remote-bar"):
+            for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"),
+                                    ("esc", "Esc"), ("y", "y"), ("n", "n"),
+                                    ("1", "1"), ("2", "2"), ("3", "3")]:
+                yield Button(label, id=f"rk-{key_name}")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
         yield Footer()
 
     def on_mount(self) -> None:
+        self.query_one("#remote-bar").display = False
         self.refresh_header()
         self.refresh_output()
         self.watch(self.query_one(RichLog), "scroll_y", self.on_scroll_moved, init=False)
@@ -241,6 +254,11 @@ class AgentDetailScreen(Screen):
         st = effective_status(a, self.app.seen)
         self.query_one("#detail-header", Static).update(
             f"{a.pane_id} · {a.kind} · {a.project} — {STATUS_ICONS.get(st, '?')} {st}")
+        if st == "blocked" and not self._auto_shown:
+            self.query_one("#remote-bar").display = True
+            self._auto_shown = True
+        elif st != "blocked":
+            self._auto_shown = False
 
     def refresh_output(self) -> None:
         if not self.follow:
@@ -276,6 +294,20 @@ class AgentDetailScreen(Screen):
     def action_focus_prompt(self) -> None:
         self.query_one("#prompt", Input).focus()
 
+    def action_toggle_remote(self) -> None:
+        bar = self.query_one("#remote-bar")
+        bar.display = not bar.display
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        key = event.button.id.removeprefix("rk-")
+        self._send_remote_key(key)
+
+    def _send_remote_key(self, herdr_key: str) -> None:
+        try:
+            self.app.client.send_key(self.pane_id, herdr_key)
+        except HerdrError as err:
+            self.app.notify(err.message, title=err.code, severity="error")
+
     def on_input_submitted(self, event: Input.Submitted) -> None:
         text = event.value.strip()
         if not text:
@@ -293,6 +325,19 @@ class AgentDetailScreen(Screen):
     def on_key(self, event) -> None:
         if event.key == "escape" and isinstance(self.app.focused, Input):
             self.app.focused.blur()
+            event.stop()
+            return
+        if isinstance(self.app.focused, Input):
+            return
+        bar = self.query_one("#remote-bar")
+        if not bar.display:
+            return
+        if event.key == "q":
+            bar.display = False
+            event.stop()
+            return
+        if event.key in REMOTE_KEYS:
+            self._send_remote_key(REMOTE_KEYS[event.key])
             event.stop()
 
 

@@ -29,6 +29,11 @@ async def test_q_from_detail_returns_to_list_and_q_quits(fake_client):
     app = HerdrRemoteApp(client=fake_client)
     async with app.run_test() as pilot:
         await pilot.press("enter")
+        # Default row is wA:p1 (blocked), so the remote bar auto-shows; the
+        # first "q" closes it (per spec) rather than leaving the screen.
+        await pilot.press("q")
+        assert isinstance(app.screen, AgentDetailScreen)
+        assert app.screen.query_one("#remote-bar").display is False
         await pilot.press("q")
         assert isinstance(app.screen, AgentListScreen)
 
