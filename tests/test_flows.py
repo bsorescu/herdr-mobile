@@ -37,6 +37,29 @@ async def test_vanished_agent_pops_to_list(fake_client):
         assert isinstance(app.screen, AgentListScreen)
 
 
+async def test_vanished_agent_pops_to_list_while_follow_paused(fake_client):
+    from textual.widgets import RichLog
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        app.open_agent("wA:p1")
+        await pilot.pause()
+        screen = app.screen
+        fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+        screen.refresh_output()
+        await pilot.pause()
+        log = screen.query_one(RichLog)
+        log.scroll_up(animate=False)
+        screen.on_scroll_moved()
+        assert screen.follow is False  # follow paused: refresh_output() alone
+        # would silently no-op and never notice the agent is gone.
+
+        fake_client.agents = [a for a in fake_client.agents if a.pane_id != "wA:p1"]
+        app.refresh_agents()
+        screen._tick()
+        await pilot.pause()
+        assert isinstance(app.screen, AgentListScreen)
+
+
 async def test_server_down_at_start_shows_error_state_and_retry_recovers(fake_client):
     from textual.widgets import Static
     fake_client.errors["list_agents"] = HerdrError("connection_failed", "socket gone")

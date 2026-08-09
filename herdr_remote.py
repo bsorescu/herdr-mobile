@@ -284,6 +284,14 @@ class AgentDetailScreen(Screen):
     def _tick(self) -> None:
         if self.app.screen is not self:
             return
+        if self.app.agents and self._agent() is None:
+            # The agent list has loaded and this pane isn't in it: it's truly
+            # gone, not just a stale/paused view. refresh_output() alone won't
+            # catch this while follow is paused (it early-returns without
+            # calling read_agent), so recover explicitly here.
+            self.app.handle_agent_error(
+                self.pane_id, HerdrError("agent_not_found", f"agent target {self.pane_id} not found"))
+            return
         self.refresh_header()
         self.refresh_output()
 
