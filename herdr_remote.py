@@ -31,6 +31,19 @@ class AgentInfo:
         return os.path.basename(self.cwd.rstrip("/"))
 
 
+STATUS_ORDER = {"blocked": 0, "done": 1, "working": 2, "idle": 3, "unknown": 4}
+
+
+def effective_status(agent: AgentInfo, seen: set[str]) -> str:
+    if agent.status == "done" and agent.pane_id in seen:
+        return "idle"
+    return agent.status
+
+
+def sort_agents(agents: list[AgentInfo], seen: set[str]) -> list[AgentInfo]:
+    return sorted(agents, key=lambda a: (STATUS_ORDER.get(effective_status(a, seen), 99), a.pane_id))
+
+
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
