@@ -210,6 +210,28 @@ def count_dialog_options(text: str) -> int:
     return min(highest, _DIALOG_OPTION_MAX)
 
 
+_YN_PROMPT_RE = re.compile(
+    r"[(\[]\s*y\s*/\s*n\s*[)\]]"  # "(y/n)", "[y/n]", "[Y/n]", "(y/N)"
+    r"|(?<!\w)y\s+or\s+n(?!\w)"  # "y or n"
+    r"|(?<!\S)y/n(?!\S)",  # standalone " y/n" token
+    re.IGNORECASE,
+)
+
+
+def detect_yn_prompt(text: str) -> bool:
+    """Scan the trailing _DIALOG_OPTION_WINDOW_LINES lines of agent output
+    for a y/n-style confirmation prompt: "(y/n)", "[y/n]", "[Y/n]", "(y/N)",
+    "y or n", or a standalone "y/n" token — case-insensitive. Deliberately
+    conservative (each pattern is anchored to the whole y/n token, not just
+    the letter "y") so ordinary prose containing the letter "y" (e.g.
+    "yarn install") doesn't false-positive. Normalizes CRLF and strips ANSI
+    itself, so it can be called directly on raw agent output.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    lines = text.split("\n")[-_DIALOG_OPTION_WINDOW_LINES:]
+    return any(_YN_PROMPT_RE.search(strip_ansi(line)) for line in lines)
+
+
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
     return subprocess.run(args, capture_output=True, text=True, timeout=10)
 
@@ -490,7 +512,7 @@ class AgentDetailScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#remote-bar").display = False
-        self._set_digit_count(3)
+        self._sync_remote_bar_buttons()
         self.refresh_header()
         self.refresh_output()
         self.watch(self.query_one(RichLog), "scroll_y", self.on_scroll_moved, init=False)
@@ -500,17 +522,28 @@ class AgentDetailScreen(Screen):
         for i in range(1, 10):
             self.query_one(f"#rk-{i}", Button).display = i <= count
 
-    def _sync_digit_buttons(self) -> None:
-        """Size the digit row to the actual dialog: 1..max(detected, 3) while
-        blocked and the bar is visible, otherwise the 1-3 fallback."""
-        a = self._agent()
-        st = effective_status(a, self.app.seen) if a is not None else None
-        bar = self.query_one("#remote-bar")
-        if st == "blocked" and bar.display:
-            count = max(count_dialog_options(self._last_read), 3)
-        else:
-            count = 3
+    def _sync_remote_bar_buttons(self) -> None:
+        """Show only contextually relevant remote-bar buttons, based purely
+        on the last-read content (not the herdr status field): the
+        navigation core (up/down/enter/esc) is always available while the
+        bar is open; digit buttons 1..count_dialog_options(...) appear only
+        when a numbered dialog is actually detected — no fallback minimum,
+        no dialog means no digits; y/n buttons appear only when
+        detect_yn_prompt(...) matches. Recomputed on every refresh (see
+        refresh_output/refresh_header/action_toggle_remote) so the bar
+        adapts as content changes. The hint line shortens when there are no
+        answer buttons to tap.
+        """
+        count = count_dialog_options(self._last_read)
         self._set_digit_count(count)
+        yn = detect_yn_prompt(self._last_read)
+        self.query_one("#rk-y", Button).display = yn
+        self.query_one("#rk-n", Button).display = yn
+        hint = self.query_one("#remote-hint", Static)
+        if count > 0 or yn:
+            hint.update("tap buttons to answer · n/p = next/prev agent")
+        else:
+            hint.update("n/p = next/prev agent")
 
     def _tick(self) -> None:
         if self.app.screen is not self:
@@ -543,7 +576,7 @@ class AgentDetailScreen(Screen):
             bar.display = True
             self._auto_shown = True
             self._bar_manual = False
-            self._sync_digit_buttons()
+            self._sync_remote_bar_buttons()
         elif st != "blocked":
             # Auto-hide only a bar that WE auto-showed, not one the user
             # opened manually via "k" — that stays open across the flip.
@@ -562,7 +595,7 @@ class AgentDetailScreen(Screen):
         except HerdrError as err:
             self.app.handle_agent_error(self.pane_id, err)
             return
-        self._last_read = content  # for _sync_digit_buttons' count_dialog_options
+        self._last_read = content  # for _sync_remote_bar_buttons()
         log = self.query_one(RichLog)
         log.clear()
         # Belt and braces: HerdrClient already normalizes \r\n, but strip any
@@ -586,7 +619,7 @@ class AgentDetailScreen(Screen):
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly
         # rewritten content, which corrupts the next is_vertical_scroll_end check).
         log.scroll_end(animate=False, immediate=True)
-        self._sync_digit_buttons()
+        self._sync_remote_bar_buttons()
 
     def on_scroll_moved(self) -> None:
         log = self.query_one(RichLog)
@@ -608,7 +641,7 @@ class AgentDetailScreen(Screen):
         bar.display = not bar.display
         self._bar_manual = bar.display
         if bar.display:
-            self._sync_digit_buttons()
+            self._sync_remote_bar_buttons()
 
     def action_scroll_output(self, direction: str) -> None:
         # Screen-level binding so it works regardless of which widget has focus

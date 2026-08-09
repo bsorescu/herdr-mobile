@@ -4,6 +4,7 @@ from herdr_mobile import (
     build_header_text,
     collapse_wide_rules,
     count_dialog_options,
+    detect_yn_prompt,
     effective_status,
     normalize_bullet_spacing,
     sort_agents,
@@ -304,3 +305,33 @@ def test_count_dialog_options_handles_ansi_wrapped_option_lines():
         "\x1b[36m  2. No\x1b[0m",
     ])
     assert count_dialog_options(text) == 2
+
+
+def test_detect_yn_prompt_positive_forms():
+    assert detect_yn_prompt("Allow this action? (y/n)") is True
+    assert detect_yn_prompt("Continue? [y/n]") is True
+    assert detect_yn_prompt("Proceed [Y/n]") is True
+    assert detect_yn_prompt("Overwrite the file? (y/N)") is True
+    assert detect_yn_prompt("Do you want to continue, y or n?") is True
+    assert detect_yn_prompt("Type y/n to respond") is True
+
+
+def test_detect_yn_prompt_negative_forms():
+    assert detect_yn_prompt("") is False
+    assert detect_yn_prompt("\n".join(f"line {i}" for i in range(10))) is False
+    # Prose containing the letter "y" must not false-positive.
+    assert detect_yn_prompt("yarn install failed") is False
+    assert detect_yn_prompt("The sky is sunny and windy today") is False
+    assert detect_yn_prompt("❯ 1. Yes\n  2. No") is False  # numbered dialog, not y/n
+
+
+def test_detect_yn_prompt_only_scans_trailing_window():
+    old_prompt = ["Allow this action? (y/n)"]
+    filler = [f"line {i}" for i in range(40)]
+    text = "\n".join(old_prompt + filler)
+    assert detect_yn_prompt(text) is False
+
+
+def test_detect_yn_prompt_handles_ansi_wrapped_marker():
+    text = "\x1b[32mAllow this action? (y/n)\x1b[0m"
+    assert detect_yn_prompt(text) is True

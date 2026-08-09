@@ -384,7 +384,9 @@ async def test_buttons_send_keys(fake_client):
 async def test_remote_bar_fits_portrait_phone(fake_client):
     # Blocked-with-6-options: the digit row grows to 1-6 (see
     # test_digit_buttons_scale_to_dialog_option_count), which is the
-    # realistic worst case that must still fit a 44-col phone screen.
+    # realistic worst case that must still fit a 44-col phone screen. This
+    # dialog text has no y/n marker, so y/n stay hidden — only the
+    # navigation core (always shown) plus the 6 digits are visible.
     from textual.widgets import Static
     fake_client.reads["wA:p1"] = "\n".join([
         "Allow this action?",
@@ -400,14 +402,14 @@ async def test_remote_bar_fits_portrait_phone(fake_client):
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         bar = screen.query_one("#remote-bar")
         assert bar.display is True
-        for key_name in ["up", "down", "enter", "esc", "y", "n", "1", "2", "3", "4", "5", "6"]:
+        for key_name in ["up", "down", "enter", "esc", "1", "2", "3", "4", "5", "6"]:
             widget = screen.query_one(f"#rk-{key_name}")
             assert widget.display is True
             region = widget.region
             assert region.width > 0
             assert region.right <= 44, f"rk-{key_name} clipped: {region}"
             assert region.bottom <= 30, f"rk-{key_name} clipped: {region}"
-        for key_name in ["7", "8", "9"]:
+        for key_name in ["y", "n", "7", "8", "9"]:
             assert screen.query_one(f"#rk-{key_name}").display is False
         hint = screen.query_one("#remote-hint", Static)
         hint_region = hint.region
@@ -541,20 +543,58 @@ async def test_digit_buttons_scale_to_dialog_option_count(fake_client):
             assert screen.query_one(f"#rk-{i}", Button).display is True
         for i in range(7, 10):
             assert screen.query_one(f"#rk-{i}", Button).display is False
+        # No y/n marker in this dialog: y/n stay hidden alongside the digits.
+        assert screen.query_one("#rk-y", Button).display is False
+        assert screen.query_one("#rk-n", Button).display is False
         await pilot.click("#rk-6")
         assert ("wA:p1", "6") in fake_client.keys
 
 
-async def test_digit_buttons_fall_back_to_three_without_a_dialog(fake_client):
+async def test_bar_open_with_no_dialog_shows_only_navigation_core(fake_client):
+    # "when I press k and there's no dialog, I don't want 1,2,3,y,n — only
+    # if we actually have such a thing. Arrows can stay." The min-3 digit
+    # fallback is gone entirely: no numbered options detected means no
+    # digit buttons at all.
     from textual.widgets import Button
 
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
-        screen = await open_detail(app, pilot, "wA:p1")  # blocked, no dialog in reads
-        for i in range(1, 4):
-            assert screen.query_one(f"#rk-{i}", Button).display is True
-        for i in range(4, 10):
+        screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
+        await pilot.press("k")  # open manually — no dialog in reads
+        assert screen.query_one("#remote-bar").display is True
+        for key_name in ["up", "down", "enter", "esc"]:
+            assert screen.query_one(f"#rk-{key_name}", Button).display is True
+        assert screen.query_one("#rk-y", Button).display is False
+        assert screen.query_one("#rk-n", Button).display is False
+        for i in range(1, 10):
             assert screen.query_one(f"#rk-{i}", Button).display is False
+
+
+async def test_yn_prompt_shows_only_yn_buttons(fake_client):
+    from textual.widgets import Button
+
+    fake_client.reads["wA:p1"] = "Allow this action? (y/n)"
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#rk-y", Button).display is True
+        assert screen.query_one("#rk-n", Button).display is True
+        for i in range(1, 10):
+            assert screen.query_one(f"#rk-{i}", Button).display is False
+        await pilot.click("#rk-y")
+        assert ("wA:p1", "y") in fake_client.keys
+
+
+async def test_remote_hint_shortens_when_no_answer_buttons(fake_client):
+    from textual.widgets import Static
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked, no dialog in reads
+        hint = screen.query_one("#remote-hint", Static)
+        text = str(hint.render())
+        assert "n/p" in text
+        assert "tap buttons to answer" not in text
 
 
 async def test_auto_shown_bar_hides_when_status_leaves_blocked(fake_client):
