@@ -29,7 +29,6 @@ def test_trim_trailing_chrome_removes_claude_footer_but_keeps_spinner():
     lines = [
         "Some real output line one",
         "Some real output line two",
-        "",
         "✻ Working…",  # spinner: has letters, must survive
         "────────",
         "❯",
@@ -38,11 +37,36 @@ def test_trim_trailing_chrome_removes_claude_footer_but_keeps_spinner():
     ]
     text = "\n".join(lines)
     result = trim_trailing_chrome(text)
-    assert result.splitlines()[-1] == "✻ Working…"
-    assert "auto mode on" not in result
-    assert "❯" not in result.splitlines()[-1:][0].replace("✻ Working…", "")
-    # Nothing above the spinner line was touched.
-    assert result.splitlines()[:3] == lines[:3]
+    # Blank/separator/prompt/footer lines are gone; real content (including
+    # the spinner, which has letters) survives, in original order.
+    assert result == "\n".join([
+        "Some real output line one",
+        "Some real output line two",
+        "✻ Working…",
+    ])
+
+
+def test_trim_trailing_chrome_keeps_agents_footer_below_status_line():
+    # Regression: when Claude Code shows its agents footer BELOW the status
+    # line, those lines have letters and must be kept even though they sit
+    # below chrome that gets removed — the whole trailing window is scanned,
+    # not just a bottom-up scan that stops at the first real content.
+    lines = [
+        "some real content",
+        "────────",
+        "❯",
+        "-- INSERT -- ⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
+        "",
+        "⏺ main",
+        "◯ general-purpose  Reviewing herdr_remote.py diff",
+    ]
+    text = "\n".join(lines)
+    result = trim_trailing_chrome(text)
+    assert result == "\n".join([
+        "some real content",
+        "⏺ main",
+        "◯ general-purpose  Reviewing herdr_remote.py diff",
+    ])
 
 
 def test_trim_trailing_chrome_keeps_blocked_dialog_contents():
@@ -57,29 +81,30 @@ def test_trim_trailing_chrome_keeps_blocked_dialog_contents():
     ]
     text = "\n".join(lines)
     result = trim_trailing_chrome(text)
+    # Dialog text lines survive; frame-only lines inside the window may go
+    # (this whole block is within the trailing window) — that's fine.
     assert "Allow Bash command?" in result
     assert "1. Yes" in result
     assert "2. No" in result
-    # Only the trailing frame border (no alnum) was trimmed.
     assert "2. No" in result.splitlines()[-1]
 
 
-def test_trim_trailing_chrome_caps_at_fifteen_lines():
+def test_trim_trailing_chrome_window_limited_to_last_fifteen_lines():
     real_lines = [f"real content line {i}" for i in range(5)]
     decorative_lines = ["────"] * 20  # 20 no-alnum lines
     text = "\n".join(real_lines + decorative_lines)
     result = trim_trailing_chrome(text)
     result_lines = result.splitlines()
-    # Cap of 15: exactly 15 trailing lines removed, 5 decorative lines remain.
-    assert len(result_lines) == len(real_lines) + len(decorative_lines) - 15
-    assert result_lines[:5] == real_lines
+    # Only the trailing 15 lines are ever considered. The first 5 decorative
+    # lines (indices 5-9) fall outside that window and are left untouched;
+    # the 15 inside the window are all removed (no alnum).
+    assert result_lines == real_lines + decorative_lines[:5]
 
 
-def test_trim_trailing_chrome_leaves_middle_of_text_untouched():
-    text = "\n".join([
-        "line one",
-        "───",  # decorative, but NOT trailing (middle of text)
-        "line three",
-    ])
+def test_trim_trailing_chrome_leaves_lines_outside_window_untouched():
+    # A decorative line far enough from the end (outside the trailing-15
+    # window) survives even though it would be dropped inside the window.
+    lines = ["line one", "───"] + [f"filler {i}" for i in range(18)]
+    text = "\n".join(lines)
     result = trim_trailing_chrome(text)
     assert result == text

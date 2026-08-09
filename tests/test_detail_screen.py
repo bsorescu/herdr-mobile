@@ -76,6 +76,33 @@ async def test_output_trims_trailing_claude_chrome(fake_client):
         assert "the last real line of content" in rendered
 
 
+async def test_output_keeps_agents_footer_below_status_line(fake_client):
+    # Regression: the agents footer ("⏺ main" / "◯ general-purpose ...") can
+    # render BELOW the "-- INSERT -- ... auto mode on" status line. Those
+    # lines have letters and are useful, so they must survive even though
+    # the chrome above them (separators, ❯, the status line) is removed.
+    fake_client.reads["wA:p1"] = "\n".join([
+        "some real content",
+        "────────",
+        "❯",
+        "-- INSERT -- ⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
+        "",
+        "⏺ main",
+        "◯ general-purpose  Reviewing herdr_remote.py diff",
+    ])
+    app = HerdrRemoteApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "auto mode on" not in rendered
+        assert "-- INSERT --" not in rendered
+        assert "some real content" in rendered
+        assert "⏺ main" in rendered
+        assert "general-purpose" in rendered
+        assert "Reviewing herdr_remote.py diff" in rendered
+
+
 async def test_header_shows_identity_and_status(fake_client):
     app = HerdrRemoteApp(client=fake_client)
     async with app.run_test() as pilot:

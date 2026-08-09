@@ -49,34 +49,36 @@ def sort_agents(agents: list[AgentInfo], seen: set[str]) -> list[AgentInfo]:
 _ALNUM_RE = re.compile(r"[0-9A-Za-z]")
 _CHROME_RE = re.compile(
     r"⏵⏵|auto mode on|bypassing permissions|plan mode on|esc to interrupt|"
-    r"\? for shortcuts|ctrl\+p to cycle",
+    r"\? for shortcuts|ctrl\+p to cycle|-- INSERT --",
     re.IGNORECASE,
 )
-_TRIM_CAP = 15
+_TRIM_WINDOW = 15
 
 
 def trim_trailing_chrome(text: str) -> str:
-    """Drop trailing agent-TUI chrome (frames, blank lines, footer/status bar).
+    """Drop agent-TUI chrome from the trailing window of the output.
 
-    Works from the last line upward, dropping a line if it has no
-    alphanumeric characters (blank lines, box-drawing runs, a bare ❯) or it
-    matches a known Claude Code footer/status pattern. Stops at the first
-    line matching neither rule, so real content (including a spinner line
-    like "✻ Working…", which has letters) is preserved. Only ever trims the
-    trailing _TRIM_CAP lines — decoration in the middle of the text is left
-    untouched.
+    Only the last _TRIM_WINDOW lines are ever considered — everything before
+    that window is left untouched, even if it looks decorative. Within the
+    window, ANY line (not just ones flush against the very end) is dropped
+    if it matches a known Claude Code footer/status pattern (e.g. "auto mode
+    on", "-- INSERT --", "esc to interrupt") or has no alphanumeric
+    characters (blank lines, box-drawing separators, a bare ❯, colored blank
+    bands). This still keeps real content that happens to sit below such
+    chrome — e.g. Claude Code's "⏺ main" / "◯ general-purpose  ..." agent
+    status lines, which have letters and match no chrome pattern. Trailing
+    blank lines left behind by the filtering are stripped from the result.
     """
     lines = text.split("\n")
-    keep_until = len(lines)
-    trimmed = 0
-    while keep_until > 0 and trimmed < _TRIM_CAP:
-        line = lines[keep_until - 1]
-        if not _ALNUM_RE.search(line) or _CHROME_RE.search(line):
-            keep_until -= 1
-            trimmed += 1
+    window_start = max(0, len(lines) - _TRIM_WINDOW)
+    kept = lines[:window_start]
+    for line in lines[window_start:]:
+        if _CHROME_RE.search(line) or not _ALNUM_RE.search(line):
             continue
-        break
-    return "\n".join(lines[:keep_until])
+        kept.append(line)
+    while kept and kept[-1].strip() == "":
+        kept.pop()
+    return "\n".join(kept)
 
 
 def _default_run(args: list[str]) -> subprocess.CompletedProcess:
