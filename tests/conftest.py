@@ -16,6 +16,13 @@ def isolate_prompt_history(tmp_path, monkeypatch):
     monkeypatch.setattr(herdr_mobile, "DEFAULT_PROMPT_HISTORY_PATH", tmp_path / "prompt_history.json")
 
 
+@pytest.fixture(autouse=True)
+def isolate_access_history(tmp_path, monkeypatch):
+    """Same isolation as isolate_prompt_history, for
+    ~/.local/state/herdr-mobile/access_history.json (AccessHistoryStore)."""
+    monkeypatch.setattr(herdr_mobile, "DEFAULT_ACCESS_HISTORY_PATH", tmp_path / "access_history.json")
+
+
 class FakeHerdrClient:
     def __init__(self, agents=None):
         self.agents = agents or []

@@ -100,9 +100,16 @@ herdr-mobile
 | `r` | Refresh list |
 | `q` | Quit app |
 
-Agents are shown in triage order: `blocked` → `done` → `working` → `idle` →
-`unknown`. If `herdr` can't be reached, an error banner replaces the table;
-`r` retries.
+Agents are sorted by pure recency of when you last opened them from THIS
+phone — most-recently-opened first, persisted to
+`~/.local/state/herdr-mobile/access_history.json`. This is deliberate: it's
+easy to send a prompt to the wrong agent when you expected the one you just
+looked at to still be on top. Status doesn't drive the ordering (it's still
+visible via the icon) — an agent you opened five minutes ago stays above a
+`blocked` one you've never opened. Agents you haven't opened from this
+phone yet fall to the bottom, in triage order (`blocked` → `done` →
+`working` → `idle` → `unknown`) among themselves. If `herdr` can't be
+reached, an error banner replaces the table; `r` retries.
 
 ### Agent detail screen
 

@@ -49,6 +49,28 @@ async def test_list_error_shows_notification_keeps_last_list(fake_client):
         assert table.row_count == 4  # last good list kept
 
 
+async def test_recency_sort_puts_recently_opened_agent_first(fake_client):
+    # The user's explicit choice: pure recency of their own phone access,
+    # not status/triage — they've already sent a prompt to the wrong agent
+    # because they expected the most-recently-opened one on top.
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        table = app.screen.query_one(DataTable)
+        assert "wA:p1" in str(table.get_row_at(0))  # blocked, triage-first initially
+
+        app.open_agent("w7:p2")  # idle agent, never accessed before
+        await pilot.pause()
+        await pilot.press("q")  # back to the list
+        await pilot.pause()
+
+        app.refresh_agents()
+        await pilot.pause()
+
+        assert app.agents[0].pane_id == "w7:p2"  # now first despite wA:p1 being blocked
+        table = app.screen.query_one(DataTable)
+        assert "w7:p2" in str(table.get_row_at(0))
+
+
 async def test_refresh_preserves_selection_by_identity_across_reorder(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:

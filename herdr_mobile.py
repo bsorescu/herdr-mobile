@@ -47,6 +47,22 @@ def sort_agents(agents: list[AgentInfo], seen: set[str]) -> list[AgentInfo]:
     return sorted(agents, key=lambda a: (STATUS_ORDER.get(effective_status(a, seen), 99), a.pane_id))
 
 
+def sort_agents_by_recency(
+    agents: list[AgentInfo], seen: set[str], access_times: dict[str, float]
+) -> list[AgentInfo]:
+    """Order agents by pure recency of the user's own last phone access (by
+    cwd), most-recently-opened first — a deliberate user choice, NOT
+    status/blocked-first (status stays visible via the icon regardless).
+    Agents never opened from this phone come after, ordered among
+    themselves by the existing triage order (sort_agents, kept as the
+    fallback comparator for that tail).
+    """
+    accessed = [a for a in agents if a.cwd in access_times]
+    never_accessed = [a for a in agents if a.cwd not in access_times]
+    accessed.sort(key=lambda a: access_times[a.cwd], reverse=True)
+    return accessed + sort_agents(never_accessed, seen)
+
+
 _ALNUM_RE = re.compile(r"[0-9A-Za-z]")
 _CHROME_RE = re.compile(
     r"⏵⏵|auto mode on|bypassing permissions|plan mode on|esc to interrupt|"
@@ -461,6 +477,52 @@ class PromptHistoryStore:
             return
         self.entries.insert(0, prompt)
         del self.entries[PROMPT_HISTORY_MAX_ENTRIES:]
+        self._save()
+
+    def _save(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.entries))
+        except Exception:
+            pass
+
+
+DEFAULT_ACCESS_HISTORY_PATH = Path.home() / ".local" / "state" / "herdr-mobile" / "access_history.json"
+
+
+class AccessHistoryStore:
+    """Persists when each project (by cwd) was last opened from THIS phone
+    UI, so the agent list can sort by pure recency of the user's own access
+    (see sort_agents_by_recency) instead of triage/status order — a
+    deliberate user choice: they've already sent a prompt to the wrong
+    agent because they expected the most-recently-accessed one on top.
+
+    Best-effort, same pattern as PromptHistoryStore: any read/write failure
+    is swallowed silently and falls back to in-memory-only, so a missing/
+    corrupt/unwritable file never breaks the app. `path=None` resolves
+    DEFAULT_ACCESS_HISTORY_PATH at call time (not baked into a default
+    argument), so tests can monkeypatch it per-test.
+    """
+
+    def __init__(self, path: Path | str | None = None) -> None:
+        self.path = Path(path) if path is not None else DEFAULT_ACCESS_HISTORY_PATH
+        self.entries: dict[str, float] = self._load()
+
+    def _load(self) -> dict[str, float]:
+        try:
+            data = json.loads(self.path.read_text())
+        except Exception:
+            return {}
+        if not isinstance(data, dict):
+            return {}
+        result: dict[str, float] = {}
+        for key, value in data.items():
+            if isinstance(key, str) and isinstance(value, (int, float)) and not isinstance(value, bool):
+                result[key] = float(value)
+        return result
+
+    def record(self, cwd: str) -> None:
+        self.entries[cwd] = time.time()
         self._save()
 
     def _save(self) -> None:
@@ -1065,7 +1127,12 @@ class AgentDetailScreen(Screen):
 class HerdrMobileApp(App):
     TITLE = "herdr-mobile"
 
-    def __init__(self, client, history: PromptHistoryStore | None = None) -> None:
+    def __init__(
+        self,
+        client,
+        history: PromptHistoryStore | None = None,
+        access_history: AccessHistoryStore | None = None,
+    ) -> None:
         super().__init__()
         self.client = client
         self.agents: list[AgentInfo] = []
@@ -1080,6 +1147,9 @@ class HerdrMobileApp(App):
         # agents' detail screens share this one history. `history` is
         # injectable so tests can point it at a tmp path.
         self.prompt_history = history if history is not None else PromptHistoryStore()
+        # Same best-effort/injectable pattern; drives sort_agents_by_recency
+        # in refresh_agents. Recorded in open_agent.
+        self.access_history = access_history if access_history is not None else AccessHistoryStore()
 
     def on_mount(self) -> None:
         self.push_screen(AgentListScreen())
@@ -1089,7 +1159,8 @@ class HerdrMobileApp(App):
         screen = self.screen_stack[-1] if self.screen_stack else None
         list_screen = screen if isinstance(screen, AgentListScreen) else None
         try:
-            self.agents = sort_agents(self.client.list_agents(), self.seen)
+            self.agents = sort_agents_by_recency(
+                self.client.list_agents(), self.seen, self.access_history.entries)
         except HerdrError as err:
             if not self.agents:
                 if list_screen is not None:
@@ -1142,6 +1213,8 @@ class HerdrMobileApp(App):
         agent = next((a for a in self.agents if a.pane_id == pane_id), None)
         if agent and agent.status == "done":
             self.seen.add(pane_id)
+        if agent is not None:
+            self.access_history.record(agent.cwd)
         self.push_screen(AgentDetailScreen(pane_id))
 
     def handle_agent_error(self, pane_id: str, err: HerdrError) -> None:

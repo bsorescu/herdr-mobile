@@ -11,13 +11,14 @@ from herdr_mobile import (
     normalize_ambiguous_glyphs,
     normalize_bullet_spacing,
     sort_agents,
+    sort_agents_by_recency,
     strip_ansi,
     trim_trailing_chrome,
 )
 
 
-def make(pane_id, status):
-    return AgentInfo(pane_id=pane_id, kind="claude", status=status, cwd="/tmp/proj")
+def make(pane_id, status, cwd="/tmp/proj"):
+    return AgentInfo(pane_id=pane_id, kind="claude", status=status, cwd=cwd)
 
 
 def test_effective_status_done_seen_becomes_idle():
@@ -32,6 +33,28 @@ def test_sort_agents_triage_order_and_stability():
               make("w4:p1", "working"), make("w5:p1", "unknown"), make("w0:p1", "blocked")]
     ordered = sort_agents(agents, seen=set())
     assert [a.pane_id for a in ordered] == ["w0:p1", "w2:p1", "w3:p1", "w4:p1", "w1:p1", "w5:p1"]
+
+
+def test_sort_agents_by_recency_orders_accessed_before_never_accessed():
+    # Pure recency, the user's explicit choice: an idle agent they opened
+    # recently must outrank a blocked agent they never opened — status
+    # stays visible via the icon, but doesn't drive the ordering.
+    recent = make("w1:p1", "idle", cwd="/dev/recent")
+    old = make("w2:p1", "blocked", cwd="/dev/old")
+    never_blocked = make("w3:p1", "blocked", cwd="/dev/never-blocked")
+    never_working = make("w4:p1", "working", cwd="/dev/never-working")
+    access_times = {"/dev/recent": 200.0, "/dev/old": 100.0}
+    ordered = sort_agents_by_recency(
+        [never_working, never_blocked, old, recent], seen=set(), access_times=access_times)
+    # accessed-recent, accessed-old, then never-accessed in triage order
+    # (blocked before working) among themselves.
+    assert [a.pane_id for a in ordered] == ["w1:p1", "w2:p1", "w3:p1", "w4:p1"]
+
+
+def test_sort_agents_by_recency_falls_back_to_triage_when_nothing_accessed():
+    agents = [make("w1:p1", "working", cwd="/dev/a"), make("w2:p1", "blocked", cwd="/dev/b")]
+    ordered = sort_agents_by_recency(agents, seen=set(), access_times={})
+    assert [a.pane_id for a in ordered] == ["w2:p1", "w1:p1"]  # blocked first, triage tail
 
 
 def test_sort_agents_respects_seen():
