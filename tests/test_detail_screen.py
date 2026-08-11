@@ -81,6 +81,8 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
     # render BELOW the "-- INSERT -- ... auto mode on" status line. Those
     # lines have letters and are useful, so they must survive even though
     # the chrome above them (separators, ❯, the status line) is removed.
+    # (⏺/◯ get normalized to ●/○ — see test_output_normalizes_ambiguous_
+    # width_glyphs — so the assertions below check for the narrow forms.)
     fake_client.reads["wA:p1"] = "\n".join([
         "some real content",
         "────────",
@@ -98,7 +100,7 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
         assert "auto mode on" not in rendered
         assert "-- INSERT --" not in rendered
         assert "some real content" in rendered
-        assert "⏺ main" in rendered
+        assert "● main" in rendered
         assert "general-purpose" in rendered
         assert "Reviewing herdr_mobile.py diff" in rendered
 
@@ -106,7 +108,9 @@ async def test_output_keeps_agents_footer_below_status_line(fake_client):
 async def test_output_spaces_out_glued_bullet_lines(fake_client):
     # Regression: rows felt glued together when a bullet glyph (⏺ ◯ etc.)
     # was directly followed by text with no space, e.g. from the agents
-    # footer or a tool-result marker.
+    # footer or a tool-result marker. (⏺/◯ get normalized to ●/○ first — see
+    # test_output_normalizes_ambiguous_width_glyphs — so the spaced-out
+    # assertions below check for the narrow forms.)
     fake_client.reads["wA:p1"] = "\n".join([
         "⏺main",
         "◯general-purpose  Reviewing herdr_mobile.py diff",
@@ -117,12 +121,30 @@ async def test_output_spaces_out_glued_bullet_lines(fake_client):
         screen = await open_detail(app, pilot)
         log = screen.query_one(RichLog)
         rendered = [strip.text for strip in log.lines]
-        assert "⏺ main" in rendered
-        assert "◯ general-purpose  Reviewing herdr_mobile.py diff" in rendered
+        assert "● main" in rendered
+        assert "○ general-purpose  Reviewing herdr_mobile.py diff" in rendered
         assert "⎿ Read 5 lines" in rendered
-        assert "⏺main" not in rendered
-        assert "◯general-purpose  Reviewing herdr_mobile.py diff" not in rendered
+        assert "●main" not in rendered
+        assert "○general-purpose  Reviewing herdr_mobile.py diff" not in rendered
         assert "⎿Read 5 lines" not in rendered
+
+
+async def test_output_normalizes_ambiguous_width_glyphs(fake_client):
+    # Regression: some terminal fonts (e.g. Termius) render ⏺/◯ as
+    # double-width even though Rich counts them as width 1, shifting the
+    # rest of the row right and clipping its last character off-screen
+    # (e.g. "⏺ main" rendered as "⏺ mai"). Substituted for safe width-1
+    # equivalents (●/○) before anything else touches the text.
+    fake_client.reads["wA:p1"] = "\n".join(["⏺ main", "◯ idle"])
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        rendered = "\n".join(strip.text for strip in log.lines)
+        assert "● main" in rendered
+        assert "○ idle" in rendered
+        assert "⏺" not in rendered
+        assert "◯" not in rendered
 
 
 async def test_output_collapses_wide_space_gaps(fake_client):

@@ -8,6 +8,7 @@ from herdr_mobile import (
     detect_agent_mode,
     detect_yn_prompt,
     effective_status,
+    normalize_ambiguous_glyphs,
     normalize_bullet_spacing,
     sort_agents,
     strip_ansi,
@@ -476,3 +477,26 @@ def test_detect_agent_mode_prefers_closest_to_bottom():
         "auto mode on (ctrl+p to cycle)",
     ])
     assert detect_agent_mode(text) == "auto"
+
+
+def test_normalize_ambiguous_glyphs_substitutes_known_wide_glyphs():
+    assert normalize_ambiguous_glyphs("⏺ main") == "● main"
+    assert normalize_ambiguous_glyphs("◯ idle") == "○ idle"
+    assert normalize_ambiguous_glyphs("⏺main ◯idle") == "●main ○idle"
+
+
+def test_normalize_ambiguous_glyphs_leaves_other_glyphs_untouched():
+    # The other Claude Code status glyphs render at width 1 in practice and
+    # must NOT be substituted — keep the map minimal.
+    line = "✻ Working… ✽ ✢ ✶ ✳ ⎿ Read 5 lines ❯ 1. Yes"
+    assert normalize_ambiguous_glyphs(line) == line
+
+
+def test_normalize_ambiguous_glyphs_leaves_unaffected_lines_unchanged():
+    line = "some plain output with no special glyphs"
+    assert normalize_ambiguous_glyphs(line) == line
+
+
+def test_normalize_ambiguous_glyphs_preserves_ansi_around_glyph():
+    line = "\x1b[32m⏺\x1b[0m main"
+    assert normalize_ambiguous_glyphs(line) == "\x1b[32m●\x1b[0m main"

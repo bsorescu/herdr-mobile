@@ -67,6 +67,33 @@ def strip_ansi(line: str) -> str:
     return _ANSI_RE.sub("", line)
 
 
+# Glyphs with ambiguous/emoji-style terminal-rendering width, mapped to a
+# safe, unambiguous width-1 equivalent. Some terminal fonts (e.g. Termius on
+# phones) render these as double-width even though Rich's own wcwidth-based
+# layout counts them as width 1 — every character after one of these on the
+# row then shifts one column to the right, clipping the row's last visible
+# character off-screen (e.g. "⏺ main" renders as "⏺ mai"). Kept deliberately
+# minimal and documented: the other Claude Code status glyphs used elsewhere
+# in this file (✻ ✽ ✢ ✶ ✳ ⎿ ❯) render at width 1 in practice and are
+# intentionally NOT substituted.
+_AMBIGUOUS_GLYPH_MAP = {
+    "⏺": "●",  # U+23FA -> U+25CF
+    "◯": "○",  # U+25EF -> U+25CB
+}
+
+
+def normalize_ambiguous_glyphs(text: str) -> str:
+    """Substitute known ambiguous-width glyphs (see _AMBIGUOUS_GLYPH_MAP)
+    for safe width-1 equivalents, everywhere in the text (ANSI codes around
+    a glyph don't interfere — this is a plain substring replace, not
+    ANSI-aware classification, so lines without a matching glyph are
+    returned byte-for-byte unchanged).
+    """
+    for wide, narrow in _AMBIGUOUS_GLYPH_MAP.items():
+        text = text.replace(wide, narrow)
+    return text
+
+
 def trim_trailing_chrome(text: str) -> str:
     """Drop agent-TUI chrome from the trailing window of the output.
 
@@ -784,6 +811,12 @@ class AgentDetailScreen(Screen):
         # stray \r here too so Text.from_ansi never treats it as a
         # carriage-return-overwrite (which wipes all but the last line).
         content = content.replace("\r\n", "\n").replace("\r", "")
+        # Substitute ambiguous/emoji-width glyphs (⏺/◯) for safe width-1
+        # equivalents (●/○) first, before anything else touches the text —
+        # some terminal fonts (e.g. Termius) render them double-width even
+        # though Rich counts them as width 1, clipping the last visible
+        # character off the row.
+        content = normalize_ambiguous_glyphs(content)
         # Detect the agent's permission mode on the PRE-TRIM text — the
         # status line this reads is exactly what trim_trailing_chrome
         # removes from the displayed output below. Threaded into
