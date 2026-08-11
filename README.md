@@ -191,10 +191,21 @@ session is doing) and opens a terminal screen for it.
 
 | Key | Action |
 |---|---|
-| `i` | Focus the command box (type a command, then `enter` to run it — exactly what typing at a shell prompt does) |
+| `i` | Focus the command box (already focused when the screen opens — see below; useful again after `esc` blurs it) |
 | `k` | Toggle the remote-control key bar (`↑ ↓ Enter Esc` — for `less`, `vim`, interactive menus, tab-completion, etc.) |
 | `u` / `d` | Scroll output up / down half a page |
 | `q` | Back to the agent list — closes the bar first if it's open, same as the agent detail screen |
+
+Unlike the agent detail screen (navigation-first, prompt box unfocused
+until you press `i`), the terminal screen focuses the command box
+immediately on open — you're here to type one command after another, not
+navigate. `enter` runs the command and clears the box but leaves it
+focused, so the next command follows right away with no extra tap. Because
+the box is focused by default, letters that are screen bindings elsewhere
+(`q`, `u`, `d`, `i`, …) simply type into it like any other key; `esc`
+blurs it (without leaving the screen) if you want the physical keys back —
+tapping the footer's `Back`/`Keys` entries always works regardless of
+focus.
 
 The terminal screen reuses the exact same output pipeline as an agent's
 detail screen (glued-bullet spacing, wide-rule/wide-gap collapsing, ANSI

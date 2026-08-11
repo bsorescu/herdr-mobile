@@ -1271,12 +1271,21 @@ class TerminalScreen(Screen):
             with Horizontal(id="remote-row1"):
                 for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"), ("esc", "Esc")]:
                     yield Button(label, id=f"rk-{key_name}")
-        yield Input(placeholder="command… (i to focus)", id="prompt")
+        yield Input(placeholder="command…", id="prompt")
         yield TerminalFooter(self)
 
     def on_mount(self) -> None:
         self.query_one("#remote-bar").display = False
-        self.query_one("#prompt", Input).suggester = PromptHistorySuggester(self.app.prompt_history)
+        prompt = self.query_one("#prompt", Input)
+        prompt.suggester = PromptHistorySuggester(self.app.prompt_history)
+        # Focused by default (unlike the agent detail screen, which stays
+        # navigation-first/unfocused): a terminal is for typing one command
+        # after another, so the user shouldn't have to press "i" every
+        # time. Letters like q/u/d/i type into the input while it's
+        # focused, same as any other printable key — expected; Esc (blurs,
+        # see on_key) or tapping the footer's "Back" (calls action_back()
+        # directly, unaffected by focus) both still leave.
+        prompt.focus()
         self.refresh_output()
         self.watch(self.query_one(RichLog), "scroll_y", self.on_scroll_moved, init=False)
         self.set_interval(READ_POLL_SECONDS, self._tick)
@@ -1364,7 +1373,9 @@ class TerminalScreen(Screen):
             return
         self.app.prompt_history.add(text)  # shared history, agents and terminals alike
         event.input.value = ""
-        event.input.blur()
+        # Deliberately does NOT blur (unlike AgentDetailScreen's prompt,
+        # which does): a terminal command is usually followed immediately
+        # by another one, so focus stays in the input for the next command.
         self.app.notify("Sent", severity="information")
         # No pending_prompts/stall-watch tracking: a plain shell pane has no
         # idle/blocked agent lifecycle to watch for.

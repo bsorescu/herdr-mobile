@@ -32,11 +32,47 @@ async def test_terminal_reads_via_read_pane_not_read_agent(fake_client):
         assert "hi" in rendered
 
 
+async def test_terminal_mounts_with_prompt_input_focused(fake_client):
+    # Unlike the agent detail screen (navigation-first, unfocused), a
+    # terminal is for typing one command after another — the user
+    # shouldn't have to press "i" every time.
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        assert isinstance(app.focused, Input)
+        assert app.focused is screen.query_one("#prompt", Input)
+
+
+async def test_terminal_typing_immediately_lands_in_input(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        # q/u/d/i are screen-binding keys elsewhere, but with the input
+        # already focused they must type into it like any other letter.
+        await pilot.press(*"qud i")
+        assert screen.query_one("#prompt", Input).value == "qud i"
+
+
+async def test_terminal_enter_sends_keeps_focus_and_clears(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        await pilot.press(*"ls -la")
+        await pilot.press("enter")
+        assert fake_client.prompts == [("wT:p1", "ls -la")]
+        prompt = screen.query_one("#prompt", Input)
+        assert prompt.value == ""
+        assert prompt.has_focus  # stays focused: unlike the agent prompt, no blur-on-send
+        # Immediately usable for the next command.
+        await pilot.press(*"pwd")
+        await pilot.press("enter")
+        assert fake_client.prompts == [("wT:p1", "ls -la"), ("wT:p1", "pwd")]
+
+
 async def test_terminal_prompt_sends_via_pane_run(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_terminal(app, pilot)
-        await pilot.press("i")
         assert isinstance(app.focused, Input)
         await pilot.press(*"ls -la")
         await pilot.press("enter")
@@ -49,10 +85,41 @@ async def test_terminal_stall_watch_is_disabled(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         await open_terminal(app, pilot)
-        await pilot.press("i")
         await pilot.press(*"echo hi")
         await pilot.press("enter")
         assert app.pending_prompts == {}
+
+
+async def test_terminal_esc_blurs_then_q_goes_back(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        prompt = screen.query_one("#prompt", Input)
+        assert prompt.has_focus
+        await pilot.press("escape")  # blurs, does not leave the screen
+        assert not prompt.has_focus
+        assert app.screen is screen
+        await pilot.press("q")  # now reaches the screen binding
+        assert app.screen is not screen
+        from herdr_mobile import AgentListScreen
+        assert isinstance(app.screen, AgentListScreen)
+
+
+async def test_terminal_footer_back_tap_works_while_input_focused(fake_client):
+    # FooterEntry calls its action directly (not App.simulate_key), so
+    # tapping "Back" must work unconditionally, even with the input
+    # focused by default.
+    from herdr_mobile import FooterEntry
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        assert app.focused is screen.query_one("#prompt", Input)
+        back_entry = next(e for e in screen.query(FooterEntry) if e.description == "Back")
+        await pilot.click(back_entry)
+        assert app.screen is not screen
+        from herdr_mobile import AgentListScreen
+        assert isinstance(app.screen, AgentListScreen)
 
 
 async def test_terminal_remote_bar_is_navigation_core_only(fake_client):
@@ -61,6 +128,7 @@ async def test_terminal_remote_bar_is_navigation_core_only(fake_client):
         screen = await open_terminal(app, pilot)
         bar = screen.query_one("#remote-bar")
         assert bar.display is False
+        await pilot.press("escape")  # blur the input first: "k" types into it otherwise
         await pilot.press("k")
         assert bar.display is True
         for key_name in ["up", "down", "enter", "esc"]:
@@ -76,6 +144,7 @@ async def test_terminal_arrow_key_forwards_while_bar_visible(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_terminal(app, pilot)
+        await pilot.press("escape")
         await pilot.press("k")
         assert screen.query_one("#remote-bar").display is True
         await pilot.press("down")
@@ -87,6 +156,7 @@ async def test_terminal_q_closes_bar_then_returns_to_list(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_terminal(app, pilot)
+        await pilot.press("escape")
         await pilot.press("k")
         assert screen.query_one("#remote-bar").display is True
         await pilot.press("q")  # first q closes the bar
