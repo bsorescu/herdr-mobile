@@ -72,6 +72,41 @@ def test_send_key_special_vs_text():
     assert run.calls[1] == ["herdr", "pane", "send-text", "w3:p1", "y"]
 
 
+def test_create_workspace_parses_root_pane_and_workspace_id():
+    # Real JSON shape, captured from a live `herdr workspace create --no-focus`.
+    payload = {
+        "id": "cli:workspace:create",
+        "result": {
+            "root_pane": {"pane_id": "wM:p1", "workspace_id": "wM", "tab_id": "wM:t1",
+                          "cwd": "/Users/bogdan/Development/herdr-remote"},
+            "tab": {"tab_id": "wM:t1", "workspace_id": "wM"},
+            "workspace": {"workspace_id": "wM", "label": "5"},
+            "type": "workspace_created",
+        },
+    }
+    run = fake_run(stdout=json.dumps(payload))
+    pane_id, workspace_id = HerdrClient(run_cli=run).create_workspace()
+    assert pane_id == "wM:p1"
+    assert workspace_id == "wM"
+    assert run.calls[0] == ["herdr", "workspace", "create", "--no-focus"]
+
+
+def test_read_pane_uses_visible_source_and_agent_read_command():
+    # Verified live: `herdr agent read <pane> --source recent-unwrapped`
+    # returns EMPTY text for a pane with no registered agent; only
+    # `--source visible` returns real content. `herdr pane read` (the other
+    # candidate) prints plain unwrapped text, not JSON, so it's unusable.
+    payload = {"id": "cli:agent:read", "result": {"read": {
+        "format": "ansi", "pane_id": "wM:p1", "source": "visible",
+        "text": "\x1b[32m$ \x1b[0mecho hello\r\nhello"}}}
+    run = fake_run(stdout=json.dumps(payload))
+    text = HerdrClient(run_cli=run).read_pane("wM:p1", lines=50)
+    assert text == "\x1b[32m$ \x1b[0mecho hello\nhello"  # \r\n normalized too
+    assert run.calls[0] == ["herdr", "agent", "read", "wM:p1",
+                            "--source", "visible", "--format", "ansi",
+                            "--lines", "50"]
+
+
 def test_error_json_raises_herdr_error():
     run = fake_run(stderr=(FIXTURES / "error_not_found.json").read_text(), returncode=1)
     with pytest.raises(HerdrError) as ei:

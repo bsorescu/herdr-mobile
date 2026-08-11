@@ -97,6 +97,7 @@ herdr-mobile
 |---|---|
 | `j` / `k` | Move selection down / up |
 | `enter` | Open selected agent |
+| `o` | Open a new terminal space (see below) |
 | `r` | Refresh list |
 | `q` | Quit app |
 
@@ -178,6 +179,38 @@ Nothing is shown for other agents (e.g. pi) or when no mode marker is
 visible. Press `m` to cycle it — that sends `ctrl+p` to the agent's pane,
 Claude Code's own mode-cycle binding; the display catches up on the next
 poll.
+
+### Terminal space
+
+Sometimes you don't want an agent — you want a real shell, phone-shaped, to
+navigate around and start one yourself, exactly like you would sitting at
+the Mac. Press `o` on the agent list to open one: herdr-mobile creates a
+brand-new herdr workspace (`herdr workspace create --no-focus` — it never
+touches any existing pane, and never steals focus from whatever your Mac
+session is doing) and opens a terminal screen for it.
+
+| Key | Action |
+|---|---|
+| `i` | Focus the command box (type a command, then `enter` to run it — exactly what typing at a shell prompt does) |
+| `k` | Toggle the remote-control key bar (`↑ ↓ Enter Esc` — for `less`, `vim`, interactive menus, tab-completion, etc.) |
+| `u` / `d` | Scroll output up / down half a page |
+| `q` | Back to the agent list — closes the bar first if it's open, same as the agent detail screen |
+
+The terminal screen reuses the exact same output pipeline as an agent's
+detail screen (glued-bullet spacing, wide-rule/wide-gap collapsing, ANSI
+handling), the same prompt box with shared prompt-history autosuggestions,
+and the same scroll-follow/pause behavior — it's just not tied to an
+agent's status, so there's no permission-mode display, no dialog-answer
+buttons, no stall warning, and no `n`/`p` agent-cycling (`q` only).
+
+If you launch `claude` or `pi` inside the terminal, herdr detects it as a
+real agent on its own — no action needed here. It'll show up in your agent
+list on the next refresh; herdr-mobile also shows a one-time "Agent
+detected — it's in your list now" toast right on the terminal screen, but
+doesn't navigate you away from what you're looking at. The workspace you
+created stays around after you back out — herdr-mobile never auto-closes
+it, so it's yours to keep, reopen (from the agent list, once something's
+running in it) or close from the Mac like any other workspace.
 
 ## Termius tips
 

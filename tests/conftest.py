@@ -30,6 +30,14 @@ class FakeHerdrClient:
         self.prompts = []
         self.keys = []
         self.errors = {}
+        # Terminal-space (Feature B): configurable pane/workspace id
+        # returned by create_workspace(), and a separate text store for
+        # read_pane() (distinct from `reads`, which backs read_agent()).
+        self.new_terminal_pane_id = "wT:p1"
+        self.new_terminal_workspace_id = "wT"
+        self.workspaces_created = 0
+        self.pane_texts = {}
+        self.pane_reads = []
 
     def _maybe_raise(self, method):
         if method in self.errors:
@@ -52,6 +60,16 @@ class FakeHerdrClient:
     def send_key(self, pane_id, key):
         self._maybe_raise("send_key")
         self.keys.append((pane_id, key))
+
+    def create_workspace(self):
+        self._maybe_raise("create_workspace")
+        self.workspaces_created += 1
+        return self.new_terminal_pane_id, self.new_terminal_workspace_id
+
+    def read_pane(self, pane_id, lines=200):
+        self._maybe_raise("read_pane")
+        self.pane_reads.append(pane_id)
+        return self.pane_texts.get(pane_id, "")
 
 
 @pytest.fixture

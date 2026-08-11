@@ -435,6 +435,41 @@ class HerdrClient:
         else:
             self._call("pane", "send-keys", pane_id, key)
 
+    def create_workspace(self) -> tuple[str, str]:
+        """Create a new herdr workspace with a plain shell pane, for the
+        terminal-space feature ("o" on the list screen). Returns (pane_id,
+        workspace_id). --no-focus: never steals focus from wherever the
+        user's real terminal session currently has it. This is the ONLY
+        pane-creating call in the whole app — never split/close/touch any
+        existing pane; the created workspace is the user's to keep (no
+        auto-cleanup).
+        """
+        payload = self._call("workspace", "create", "--no-focus")
+        root_pane = payload["result"]["root_pane"]
+        workspace = payload["result"]["workspace"]
+        return root_pane["pane_id"], workspace["workspace_id"]
+
+    def read_pane(self, pane_id: str, lines: int = 200) -> str:
+        """Read a plain pane's content — e.g. a terminal-space shell with
+        no registered agent (read_agent's --source recent-unwrapped is
+        agent-lifecycle/revision-tracked and returns EMPTY text for a pane
+        with no registered agent; verified live against a real scratch
+        workspace before writing this). Uses `herdr agent read <target>
+        --source visible` instead: `herdr agent read` accepts arbitrary
+        pane ids as a target ("targets accept terminal ids, unique agent
+        names, ... and legacy pane ids" per `herdr agent --help`) and
+        returns the same JSON shape as read_agent; `--source visible` (the
+        current viewport snapshot) is the one source that actually returns
+        content for a plain shell pane. (Note: `herdr pane read` — the
+        other candidate — was also checked live and prints plain unwrapped
+        terminal text with no JSON wrapper at all, so it's not usable here
+        regardless.)
+        """
+        payload = self._call("agent", "read", pane_id, "--source", "visible",
+                             "--format", "ansi", "--lines", str(lines))
+        text = payload["result"]["read"]["text"]
+        return text.replace("\r\n", "\n").replace("\r", "")
+
 
 DEFAULT_PROMPT_HISTORY_PATH = Path.home() / ".local" / "state" / "herdr-mobile" / "prompt_history.json"
 PROMPT_HISTORY_MAX_ENTRIES = 200
@@ -608,6 +643,7 @@ REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab",
 class AgentListScreen(Screen):
     BINDINGS = [
         Binding("enter", "open_agent", "Open", priority=True),
+        Binding("o", "open_terminal", "Term"),
         Binding("r", "refresh", "Refresh"),
         Binding("q", "quit_app", "Quit"),
         Binding("j", "cursor_down", show=False),
@@ -677,6 +713,9 @@ class AgentListScreen(Screen):
 
     def on_data_table_row_selected(self, event: DataTable.RowSelected) -> None:
         self.app.open_agent(str(event.row_key.value))
+
+    def action_open_terminal(self) -> None:
+        self.app.open_terminal()
 
     def action_refresh(self) -> None:
         self.app.refresh_agents()
@@ -1124,6 +1163,231 @@ class AgentDetailScreen(Screen):
             event.stop()
 
 
+# Nav-core-only key whitelist for TerminalScreen's remote bar — no y/n or
+# digits (no dialog to answer in a plain shell), just what's useful for
+# interactive CLIs (arrow-driven menus, less/vim, tab-completion, escape).
+TERMINAL_REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab", "escape": "esc"}
+
+
+class TerminalFooter(Horizontal):
+    """Custom footer for TerminalScreen — same grouped "│"-separator style
+    as DetailFooter, reusing the same FooterEntry/FooterSeparator building
+    blocks, but with only the entries a plain terminal pane actually has
+    (no Mode, no Agent-cycling group)."""
+
+    DEFAULT_CSS = """
+    TerminalFooter {
+        height: 1;
+        background: $footer-background;
+    }
+    TerminalFooter FooterEntry {
+        margin: 0 1 0 0;
+    }
+    TerminalFooter FooterSeparator {
+        margin: 0;
+    }
+    """
+
+    def __init__(self, screen: "TerminalScreen") -> None:
+        super().__init__()
+        self._screen = screen
+
+    def compose(self) -> ComposeResult:
+        s = self._screen
+        yield FooterEntry("q", "Back", s.action_back)
+        yield FooterSeparator()
+        yield FooterEntry("i", "Ask", s.action_focus_prompt)
+        yield FooterEntry("k", "Keys", s.action_toggle_remote)
+        yield FooterSeparator()
+        yield FooterEntry("u/d", "Scr", lambda: s.action_scroll_output("up"))
+
+
+class TerminalScreen(Screen):
+    """A plain, phone-shaped terminal: "o" on the list screen creates a new
+    herdr workspace (HerdrMobileApp.open_terminal -> client.create_workspace())
+    and opens this screen for its root pane — a real shell the user drives
+    with the same prompt box, remote-control arrows, and scroll gestures as
+    an agent's detail screen.
+
+    Kept as its OWN Screen class rather than an AgentDetailScreen
+    subclass/flag: a plain terminal pane has no AgentInfo at all (it isn't
+    a registered agent), and AgentDetailScreen's status header, digit/y-n
+    dialog-sizing, mode detection, stall-watch, and n/p agent-cycling all
+    assume one exists. Duplicating a Screen's worth of wiring is the
+    tradeoff for not threading `if is_terminal:` branches through code that
+    fundamentally depends on agent state elsewhere. What IS shared: the
+    exact same module-level output pipeline (normalize_ambiguous_glyphs,
+    normalize_bullet_spacing, trim_trailing_chrome — Claude Code's chrome
+    patterns just won't match shell output, harmlessly — collapse_wide_gaps,
+    collapse_wide_rules), the same FooterEntry/FooterSeparator components
+    (via TerminalFooter), the same prompt Input + shared PromptHistoryStore/
+    PromptHistorySuggester, and the same scroll-follow/pause semantics.
+    """
+
+    BINDINGS = [
+        Binding("q", "back", "Back"),
+        Binding("escape", "back", show=False),
+        Binding("i", "focus_prompt", "Prompt"),
+        Binding("k", "toggle_remote", "Keys"),
+        Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
+        Binding("d", "scroll_output('down')", "Scroll", show=False),
+    ]
+
+    DEFAULT_CSS = """
+    TerminalScreen #output {
+        padding: 0 0 0 1;
+    }
+
+    TerminalScreen #remote-bar {
+        height: auto;
+    }
+
+    TerminalScreen #remote-row1 {
+        height: auto;
+        align: left top;
+    }
+
+    TerminalScreen #remote-bar Button {
+        width: auto;
+        min-width: 5;
+        height: 1;
+        border: none;
+        padding: 0 1;
+        margin: 0 1 0 0;
+    }
+    """
+
+    def __init__(self, pane_id: str) -> None:
+        super().__init__()
+        self.pane_id = pane_id
+        self.follow = True
+        self._agent_detected_notified = False  # toast once, see _tick
+
+    def compose(self) -> ComposeResult:
+        yield Static(f"{self.pane_id} · terminal", id="detail-header")
+        # min_width=1: see AgentDetailScreen's compose() for why.
+        yield RichLog(id="output", markup=False, wrap=True, auto_scroll=False, min_width=1)
+        with Vertical(id="remote-bar"):
+            with Horizontal(id="remote-row1"):
+                for key_name, label in [("up", "↑"), ("down", "↓"), ("enter", "Enter"), ("esc", "Esc")]:
+                    yield Button(label, id=f"rk-{key_name}")
+        yield Input(placeholder="command… (i to focus)", id="prompt")
+        yield TerminalFooter(self)
+
+    def on_mount(self) -> None:
+        self.query_one("#remote-bar").display = False
+        self.query_one("#prompt", Input).suggester = PromptHistorySuggester(self.app.prompt_history)
+        self.refresh_output()
+        self.watch(self.query_one(RichLog), "scroll_y", self.on_scroll_moved, init=False)
+        self.set_interval(READ_POLL_SECONDS, self._tick)
+
+    def _tick(self) -> None:
+        if self.app.screen is not self:
+            return
+        # Nice touch: if herdr now recognizes a live agent in this pane
+        # (the user launched claude/pi inside it), it'll show up in the
+        # agent list naturally on the next list poll — just toast once,
+        # don't auto-navigate away from what the user is looking at.
+        if not self._agent_detected_notified and any(a.pane_id == self.pane_id for a in self.app.agents):
+            self._agent_detected_notified = True
+            self.app.notify("Agent detected — it's in your list now", severity="information")
+        self.refresh_output()
+
+    def refresh_output(self) -> None:
+        if not self.follow:
+            # Same freeze-in-place semantics as AgentDetailScreen: don't let
+            # a fresh read silently replace text the user is reading.
+            return
+        try:
+            content = self.app.client.read_pane(self.pane_id)
+        except HerdrError as err:
+            self.app.notify(err.message, title=err.code, severity="error")
+            return
+        log = self.query_one(RichLog)
+        log.clear()
+        content = content.replace("\r\n", "\n").replace("\r", "")
+        content = normalize_ambiguous_glyphs(content)
+        content = normalize_bullet_spacing(content)
+        # trim_trailing_chrome's Claude Code footer/status patterns simply
+        # won't match plain shell output — harmless no-op for most lines,
+        # still trims genuinely blank/decorative trailing lines.
+        content = trim_trailing_chrome(content)
+        content = collapse_wide_gaps(content)
+        width = log.scrollable_content_region.width or _COLLAPSE_FALLBACK_WIDTH
+        content = collapse_wide_rules(content, width=width)  # no mode: not an agent
+        log.write(Text.from_ansi(content))
+        log.scroll_end(animate=False, immediate=True)
+
+    def on_scroll_moved(self) -> None:
+        log = self.query_one(RichLog)
+        was_following = self.follow
+        self.follow = bool(log.is_vertical_scroll_end)
+        if self.follow and not was_following:
+            self.refresh_output()
+
+    def action_back(self) -> None:
+        self.app.pop_screen()
+
+    def action_focus_prompt(self) -> None:
+        self.query_one("#prompt", Input).focus()
+
+    def action_toggle_remote(self) -> None:
+        bar = self.query_one("#remote-bar")
+        bar.display = not bar.display
+
+    def action_scroll_output(self, direction: str) -> None:
+        log = self.query_one(RichLog)
+        half_page = max(1, log.size.height // 2)
+        delta = -half_page if direction == "up" else half_page
+        log.scroll_relative(y=delta, animate=False, immediate=True)
+        self.on_scroll_moved()
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        key = event.button.id.removeprefix("rk-")
+        self._send_remote_key(key)
+
+    def _send_remote_key(self, herdr_key: str) -> None:
+        try:
+            self.app.client.send_key(self.pane_id, herdr_key)
+        except HerdrError as err:
+            self.app.notify(err.message, title=err.code, severity="error")
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        text = event.value.strip()
+        if not text:
+            return
+        try:
+            # pane run = command text + Enter — exactly shell semantics.
+            self.app.client.prompt_agent(self.pane_id, text)
+        except HerdrError as err:
+            self.app.notify(err.message, title=err.code, severity="error")
+            return
+        self.app.prompt_history.add(text)  # shared history, agents and terminals alike
+        event.input.value = ""
+        event.input.blur()
+        self.app.notify("Sent", severity="information")
+        # No pending_prompts/stall-watch tracking: a plain shell pane has no
+        # idle/blocked agent lifecycle to watch for.
+
+    def on_key(self, event) -> None:
+        if event.key == "escape" and isinstance(self.app.focused, Input):
+            self.app.focused.blur()
+            event.stop()
+            return
+        if isinstance(self.app.focused, Input):
+            return
+        bar = self.query_one("#remote-bar")
+        if not bar.display:
+            return
+        if event.key == "q":
+            bar.display = False
+            event.stop()
+            return
+        if event.key in TERMINAL_REMOTE_KEYS:
+            self._send_remote_key(TERMINAL_REMOTE_KEYS[event.key])
+            event.stop()
+
+
 class HerdrMobileApp(App):
     TITLE = "herdr-mobile"
 
@@ -1216,6 +1480,17 @@ class HerdrMobileApp(App):
         if agent is not None:
             self.access_history.record(agent.cwd)
         self.push_screen(AgentDetailScreen(pane_id))
+
+    def open_terminal(self) -> None:
+        # The ONLY pane-creating call in the app (see HerdrClient.create_
+        # workspace's own docstring) — never touches any existing pane, and
+        # the created workspace is the user's to keep (no auto-cleanup).
+        try:
+            pane_id, _workspace_id = self.client.create_workspace()
+        except HerdrError as err:
+            self.notify(err.message, title=err.code, severity="error")
+            return
+        self.push_screen(TerminalScreen(pane_id))
 
     def handle_agent_error(self, pane_id: str, err: HerdrError) -> None:
         top = self.screen_stack[-1] if self.screen_stack else None
