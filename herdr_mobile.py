@@ -687,8 +687,8 @@ class FooterSeparator(Static):
 
 class DetailFooter(Horizontal):
     """Custom compact footer for AgentDetailScreen ONLY — groups its keys
-    visually (exit · actions-on-agent · navigation) with "│" separators,
-    which Textual's stock Footer (used everywhere else, e.g.
+    visually (exit │ actions-on-agent │ agent-cycling │ scroll) with "│"
+    separators, which Textual's stock Footer (used everywhere else, e.g.
     AgentListScreen) can't render. Every entry stays tappable and mirrors
     an existing screen Binding/action; the Bindings themselves stay
     registered unchanged for physical keys.
@@ -712,19 +712,20 @@ class DetailFooter(Horizontal):
         self._screen = screen
 
     def compose(self) -> ComposeResult:
-        # "Ask"/"Agt"/"Scr" are shortened (from Prompt/Agent/Scroll) to fit
-        # all 6 entries plus 2 separators within a 44-column phone screen
-        # (measured empirically — see test_detail_footer_fits_44_cols_
-        # with_separators). "Back"/"Keys"/"Mode" are already short enough
-        # to stay full.
+        # "Ask"/"Mod"/"Agt"/"Scr" are shortened (from Prompt/Mode/Agent/
+        # Scroll) to fit all 6 entries plus 3 separators within a
+        # 44-column phone screen (measured empirically — see
+        # test_detail_footer_fits_44_cols_with_separators). "Back"/"Keys"
+        # are already short enough to stay full.
         s = self._screen
         yield FooterEntry("q", "Back", s.action_back)
         yield FooterSeparator()
         yield FooterEntry("i", "Ask", s.action_focus_prompt)
         yield FooterEntry("k", "Keys", s.action_toggle_remote)
-        yield FooterEntry("m", "Mode", s.action_cycle_mode)
+        yield FooterEntry("m", "Mod", s.action_cycle_mode)
         yield FooterSeparator()
         yield FooterEntry("n/p", "Agt", s.action_next_agent)
+        yield FooterSeparator()
         yield FooterEntry("u/d", "Scr", lambda: s.action_scroll_output("up"))
 
 
@@ -808,12 +809,12 @@ class AgentDetailScreen(Screen):
             yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
         # Custom footer (not Textual's stock Footer): groups keys visually
-        # with "│" separators — exit · actions-on-agent · navigation — which
-        # Textual 8.2.8's Footer can't render (its only grouping mechanism,
-        # Binding.Group, merges keys under one shared label, not a plain
-        # separator between independent entries). ctrl+p still opens the
-        # command palette regardless (App-level binding, unrelated to any
-        # Footer).
+        # with "│" separators — exit │ actions-on-agent │ agent-cycling │
+        # scroll — which Textual 8.2.8's Footer can't render (its only
+        # grouping mechanism, Binding.Group, merges keys under one shared
+        # label, not a plain separator between independent entries). ctrl+p
+        # still opens the command palette regardless (App-level binding,
+        # unrelated to any Footer).
         yield DetailFooter(self)
 
     def on_mount(self) -> None:

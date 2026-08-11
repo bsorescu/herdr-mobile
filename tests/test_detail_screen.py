@@ -720,8 +720,9 @@ async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
 async def test_detail_footer_fits_44_cols_with_separators(fake_client):
     # Regression: at 44 columns the old stock Footer used to truncate. The
     # detail screen now uses a custom DetailFooter that groups keys with
-    # "│" separators (exit · actions-on-agent · navigation) — every entry
-    # AND both separators must actually fit on a 44-column phone screen.
+    # "│" separators (exit · agent actions · agent-cycling · scroll) —
+    # every entry AND all three separators must actually fit on a
+    # 44-column phone screen.
     from herdr_mobile import DetailFooter, FooterEntry, FooterSeparator
 
     app = HerdrMobileApp(client=fake_client)
@@ -731,8 +732,8 @@ async def test_detail_footer_fits_44_cols_with_separators(fake_client):
         entries = list(footer.query(FooterEntry))
         separators = list(footer.query(FooterSeparator))
         descriptions = {e.description for e in entries}
-        assert descriptions == {"Back", "Ask", "Keys", "Mode", "Agt", "Scr"}
-        assert len(separators) == 2
+        assert descriptions == {"Back", "Ask", "Keys", "Mod", "Agt", "Scr"}
+        assert len(separators) == 3
         # Nothing renders past the 44-column screen edge — proves nothing
         # got silently clipped out.
         for widget in [*entries, *separators]:

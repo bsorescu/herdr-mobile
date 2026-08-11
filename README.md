@@ -117,12 +117,13 @@ Agents are shown in triage order: `blocked` → `done` → `working` → `idle` 
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
 The footer at the bottom groups its entries — `q Back` │ `i Ask` `k Keys`
-`m Mode` │ `n/p Agt` `u/d Scr` — visually separating the exit key from
-actions on the current agent from navigation between/within agents. Every
-entry is tappable (not just readable), and does the same thing as its
+`m Mod` │ `n/p Agt` │ `u/d Scr` — visually separating the exit key, actions
+on the current agent, cycling to another agent, and scrolling the output.
+Every entry is tappable (not just readable), and does the same thing as its
 physical key regardless of what else has focus. A few labels are
-abbreviated (`Ask` for the prompt box, `Agt`/`Scr` for agent-cycling/scroll)
-to fit all six entries and both separators on a 44-column phone screen.
+abbreviated (`Ask` for the prompt box, `Mod`/`Agt`/`Scr` for mode-cycling/
+agent-cycling/scroll) to fit all six entries and all three separators on a
+44-column phone screen.
 
 The output pane follows the agent's live output automatically; scrolling up
 pauses following (so you can read history without it jumping), scrolling
