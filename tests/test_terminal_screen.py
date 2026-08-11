@@ -183,7 +183,7 @@ async def test_terminal_q_closes_bar_then_returns_to_list(fake_client):
         assert isinstance(app.screen, AgentListScreen)
 
 
-async def test_terminal_agent_detected_toast_does_not_auto_navigate(fake_client, monkeypatch):
+async def test_terminal_auto_switches_to_agent_view_when_agent_starts(fake_client, monkeypatch):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         notifications = []
@@ -201,15 +201,43 @@ async def test_terminal_agent_detected_toast_does_not_auto_navigate(fake_client,
         screen._tick()
         await pilot.pause()
 
-        assert app.screen is screen  # did NOT auto-navigate away
-        infos = [(msg, kw) for msg, kw in notifications if kw.get("severity") == "information"]
-        assert any("Agent detected" in msg for msg, _ in infos)
+        from herdr_mobile import AgentDetailScreen
 
-        # Only toasts once even if _tick runs again.
-        screen._tick()
+        assert isinstance(app.screen, AgentDetailScreen)
+        assert app.screen.pane_id == "wT:p1"
+        assert app.screen is not screen  # the terminal screen was replaced
+
+        infos = [(msg, kw) for msg, kw in notifications if kw.get("severity") == "information"]
+        assert any("Agent started" in msg for msg, _ in infos)
+
+        # pop + open_agent (not pushing AgentDetailScreen directly), so
+        # access history/recency records too, same as any other agent.
+        assert "/dev/scratch" in app.access_history.entries
+
+
+async def test_terminal_does_not_auto_switch_when_not_on_top(fake_client):
+    # The user navigated away from the terminal screen already (e.g. opened
+    # a different agent) — respect where they are, don't yank them back.
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        app.open_agent("w3:p1")
         await pilot.pause()
-        infos_after = [(msg, kw) for msg, kw in notifications if kw.get("severity") == "information"]
-        assert len(infos_after) == len(infos)
+        assert app.screen is not screen
+
+        fake_client.agents = [
+            *fake_client.agents,
+            AgentInfo(pane_id="wT:p1", kind="claude", status="working", cwd="/dev/scratch"),
+        ]
+        app.refresh_agents()
+        await pilot.pause()
+        screen._tick()  # the terminal screen is no longer on top
+        await pilot.pause()
+
+        from herdr_mobile import AgentDetailScreen
+
+        assert isinstance(app.screen, AgentDetailScreen)
+        assert app.screen.pane_id == "w3:p1"  # stayed exactly where the user navigated
 
 
 async def test_terminal_footer_fits_44_cols(fake_client):

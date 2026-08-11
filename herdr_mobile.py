@@ -1272,7 +1272,6 @@ class TerminalScreen(Screen):
         super().__init__()
         self.pane_id = pane_id
         self.follow = True
-        self._agent_detected_notified = False  # toast once, see _tick
 
     def compose(self) -> ComposeResult:
         yield Static(f"{self.pane_id} · terminal", id="detail-header")
@@ -1303,14 +1302,22 @@ class TerminalScreen(Screen):
 
     def _tick(self) -> None:
         if self.app.screen is not self:
+            # The user navigated away from this terminal screen already —
+            # respect where they are. If an agent started in this pane
+            # while they were elsewhere, opening it again from the list is
+            # an agent view anyway (see HerdrMobileApp.open_agent).
             return
-        # Nice touch: if herdr now recognizes a live agent in this pane
-        # (the user launched claude/pi inside it), it'll show up in the
-        # agent list naturally on the next list poll — just toast once,
-        # don't auto-navigate away from what the user is looking at.
-        if not self._agent_detected_notified and any(a.pane_id == self.pane_id for a in self.app.agents):
-            self._agent_detected_notified = True
-            self.app.notify("Agent detected — it's in your list now", severity="information")
+        # If herdr now recognizes a live agent in this pane (the user
+        # launched claude/pi inside it), this terminal pane's whole reason
+        # for existing was to start one — switch straight to its agent
+        # detail view. pop then open_agent (not push AgentDetailScreen
+        # directly) so access history/recency records too, same as opening
+        # any other agent from the list.
+        if any(a.pane_id == self.pane_id for a in self.app.agents):
+            self.app.notify("Agent started", severity="information")
+            self.app.pop_screen()
+            self.app.open_agent(self.pane_id)
+            return
         self.refresh_output()
 
     def refresh_output(self) -> None:

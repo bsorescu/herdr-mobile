@@ -222,13 +222,17 @@ agent's status, so there's no permission-mode display, no dialog-answer
 buttons, no stall warning, and no `n`/`p` agent-cycling (`q` only).
 
 If you launch `claude` or `pi` inside the terminal, herdr detects it as a
-real agent on its own — no action needed here. It'll show up in your agent
-list on the next refresh; herdr-mobile also shows a one-time "Agent
-detected — it's in your list now" toast right on the terminal screen, but
-doesn't navigate you away from what you're looking at. The workspace you
-created stays around after you back out — herdr-mobile never auto-closes
-it, so it's yours to keep, reopen (from the agent list, once something's
-running in it) or close from the Mac like any other workspace.
+real agent on its own — no action needed here. As soon as herdr-mobile
+notices (on the next poll), it swaps this screen straight to that agent's
+own detail view — a brief "Agent started" toast, then you're looking at
+the same familiar agent screen (permission mode, dialog buttons, the
+works), no extra navigation needed. This only happens while you're still
+looking at the terminal screen — if you've already moved on to something
+else, herdr-mobile leaves you exactly where you are; opening that pane
+again from the agent list gets you the agent view anyway once something's
+running in it. The workspace you created stays around either way —
+herdr-mobile never auto-closes it, so it's yours to keep, or close from
+the Mac like any other workspace.
 
 ## Termius tips
 
