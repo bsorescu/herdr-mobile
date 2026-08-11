@@ -109,6 +109,7 @@ Agents are shown in triage order: `blocked` → `done` → `working` → `idle` 
 | Key | Action |
 |---|---|
 | `i` | Focus the prompt box (type, then `enter` to send) |
+| `→` (in the prompt box) | Accept the ghost-text prompt-history suggestion, if one is showing |
 | `k` | Toggle the remote-control key bar |
 | `n` / `p` | Cycle to next / previous agent (list order) |
 | `u` / `d` | Scroll output up / down half a page |
@@ -122,6 +123,15 @@ work regardless of which widget has focus (touch clients like Termius can't
 send mouse-wheel events, and physical arrow keys only scroll the output
 while it's focused) — except while the prompt box is focused, where typing
 `u`/`d` inserts the characters instead, same as any other letter.
+
+The prompt box offers fish/Claude-Code-style ghost-text completion from
+your prompt history as you type: it suggests the most recent previously
+sent prompt that starts with what you've typed so far, dimmed in after the
+cursor — press `→` at the end of the line to accept it, or keep typing to
+ignore it. History is shared across all agents (prompts like "continue" or
+"run the tests" are often reused) and persisted to
+`~/.local/state/herdr-mobile/prompt_history.json`, capped at the 200 most
+recent, deduped against immediate repeats.
 
 The remote-control bar (`k`) shows only the buttons relevant to what the
 agent is actually asking. `↑ ↓ Enter Esc` are always there while the bar is

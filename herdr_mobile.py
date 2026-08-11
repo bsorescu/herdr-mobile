@@ -11,6 +11,7 @@ import re
 import subprocess
 import time
 from dataclasses import dataclass
+from pathlib import Path
 
 
 class HerdrError(Exception):
@@ -392,11 +393,63 @@ class HerdrClient:
             self._call("pane", "send-keys", pane_id, key)
 
 
+DEFAULT_PROMPT_HISTORY_PATH = Path.home() / ".local" / "state" / "herdr-mobile" / "prompt_history.json"
+PROMPT_HISTORY_MAX_ENTRIES = 200
+
+
+class PromptHistoryStore:
+    """Persists sent prompts to a small JSON file, most-recent-first, so the
+    prompt Input can offer fish/Claude-Code-style ghost-text completion
+    (see PromptHistorySuggester). All agents share one history — prompts
+    are often reusable across agents (e.g. "continue", "run the tests").
+
+    Capped at PROMPT_HISTORY_MAX_ENTRIES entries; consecutive identical
+    entries are deduped (sending the same prompt twice in a row doesn't
+    grow the list). Loaded once at construction (app start); best-effort
+    throughout — any failure to read or write the file is swallowed
+    silently and falls back to in-memory-only, so a missing/unwritable/
+    corrupt history file never breaks the app.
+    """
+
+    def __init__(self, path: Path | str | None = None) -> None:
+        # Resolved from the module global at call time rather than baked in
+        # as a default-argument value (which Python evaluates once, at
+        # import time) — lets tests monkeypatch DEFAULT_PROMPT_HISTORY_PATH
+        # per-test to avoid ever touching the real user's history file.
+        self.path = Path(path) if path is not None else DEFAULT_PROMPT_HISTORY_PATH
+        self.entries: list[str] = self._load()
+
+    def _load(self) -> list[str]:
+        try:
+            data = json.loads(self.path.read_text())
+        except Exception:
+            return []
+        if not isinstance(data, list):
+            return []
+        return [entry for entry in data if isinstance(entry, str)]
+
+    def add(self, prompt: str) -> None:
+        prompt = prompt.strip()
+        if not prompt or (self.entries and self.entries[0] == prompt):
+            return
+        self.entries.insert(0, prompt)
+        del self.entries[PROMPT_HISTORY_MAX_ENTRIES:]
+        self._save()
+
+    def _save(self) -> None:
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            self.path.write_text(json.dumps(self.entries))
+        except Exception:
+            pass
+
+
 from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
+from textual.suggester import Suggester
 from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, Static
 
 STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
@@ -418,6 +471,43 @@ def build_header_text(agent: AgentInfo, status: str) -> Text:
     text.append(f" {agent.project} ", style=PROJECT_CHIP_STYLE)
     text.append(f" — {icon} {status}")
     return text
+
+
+class PromptHistorySuggester(Suggester):
+    """Ghost-text completion for the prompt Input, fish/Claude-Code style:
+    suggests the most recent history entry that starts with the typed
+    prefix. Textual's Input renders the rest as dim ghost text and RIGHT
+    ARROW accepts it (built-in Input behavior when a suggester is set — see
+    Input.action_cursor_right in textual==8.2.8).
+
+    Tries a case-sensitive match first (most recent entry wins, since
+    `history.entries` is already most-recent-first), then falls back to a
+    case-insensitive match. Empty prefix never suggests anything — mostly
+    moot since Input itself only calls the suggester when its value is
+    non-empty, but this guards a direct call too.
+    """
+
+    def __init__(self, history: PromptHistoryStore, *, use_cache: bool = False) -> None:
+        # case_sensitive=True: makes the base class pass `value` through to
+        # get_suggestion unmodified, so THIS class controls the
+        # case-sensitive-then-insensitive fallback instead of Textual
+        # casefolding it away first. use_cache defaults off: history.entries
+        # can grow between calls (a new prompt sent while typing another),
+        # and a stale cached suggestion would be wrong.
+        super().__init__(use_cache=use_cache, case_sensitive=True)
+        self.history = history
+
+    async def get_suggestion(self, value: str) -> str | None:
+        if not value:
+            return None
+        for entry in self.history.entries:
+            if entry.startswith(value):
+                return entry
+        lowered = value.casefold()
+        for entry in self.history.entries:
+            if entry.casefold().startswith(lowered):
+                return entry
+        return None
 
 
 REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab",
@@ -597,6 +687,7 @@ class AgentDetailScreen(Screen):
 
     def on_mount(self) -> None:
         self.query_one("#remote-bar").display = False
+        self.query_one("#prompt", Input).suggester = PromptHistorySuggester(self.app.prompt_history)
         self._sync_remote_bar_buttons()
         self.refresh_header()
         self.refresh_output()
@@ -803,6 +894,7 @@ class AgentDetailScreen(Screen):
         except HerdrError as err:
             self.app.notify(err.message, title=err.code, severity="error")
             return
+        self.app.prompt_history.add(text)
         event.input.value = ""
         event.input.blur()
         self.app.notify("Prompt sent", severity="information")
@@ -835,7 +927,7 @@ class AgentDetailScreen(Screen):
 class HerdrMobileApp(App):
     TITLE = "herdr-mobile"
 
-    def __init__(self, client) -> None:
+    def __init__(self, client, history: PromptHistoryStore | None = None) -> None:
         super().__init__()
         self.client = client
         self.agents: list[AgentInfo] = []
@@ -846,6 +938,10 @@ class HerdrMobileApp(App):
         # warning, since list-poll data can lag up to LIST_POLL_SECONDS
         # behind a read that already saw the prompt land.
         self._stale_strikes: set[str] = set()
+        # Loaded once at app start (best-effort, see PromptHistoryStore); all
+        # agents' detail screens share this one history. `history` is
+        # injectable so tests can point it at a tmp path.
+        self.prompt_history = history if history is not None else PromptHistoryStore()
 
     def on_mount(self) -> None:
         self.push_screen(AgentListScreen())

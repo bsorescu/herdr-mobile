@@ -297,6 +297,80 @@ async def test_prompt_sends_and_clears(fake_client):
         assert screen.query_one("#prompt", Input).value == ""
 
 
+async def test_prompt_history_suggests_and_accepts_on_right_arrow(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        await pilot.press(*"run the tests")
+        await pilot.press("enter")
+        assert fake_client.prompts == [("w3:p1", "run the tests")]
+
+        # Focus again and type a prefix of the just-sent prompt.
+        await pilot.press("i")
+        await pilot.press(*"run the")
+        await pilot.pause()  # let the suggester's async worker complete
+        prompt_input = app.screen.query_one("#prompt", Input)
+        assert prompt_input._suggestion == "run the tests"
+
+        await pilot.press("right")  # accept — Input's own built-in behavior
+        assert prompt_input.value == "run the tests"
+
+        await pilot.press("enter")
+        assert fake_client.prompts[-1] == ("w3:p1", "run the tests")
+
+
+async def test_prompt_history_shared_across_agents(fake_client):
+    # All agents share one history — a prompt sent to one agent suggests on
+    # a different agent's detail screen too.
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        await pilot.press(*"run the tests")
+        await pilot.press("enter")
+
+        screen2 = await open_detail(app, pilot, "wA:p1")  # a different agent
+        await pilot.press("i")
+        await pilot.press(*"run the")
+        await pilot.pause()
+        assert screen2.query_one("#prompt", Input)._suggestion == "run the tests"
+
+
+async def test_prompt_history_empty_prefix_has_no_suggestion(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        await pilot.press(*"run the tests")
+        await pilot.press("enter")
+
+        await pilot.press("i")
+        await pilot.pause()
+        assert app.screen.query_one("#prompt", Input)._suggestion == ""
+
+
+async def test_right_arrow_does_not_conflict_with_remote_bar_while_input_focused(fake_client):
+    # Regression guard: right-arrow-accepts-suggestion must work even while
+    # the remote-control bar is visible — the existing "Input focused" early
+    # return in AgentDetailScreen.on_key must not be shadowed by anything
+    # REMOTE_KEYS-related for the prompt Input specifically.
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        await pilot.press("i")
+        await pilot.press(*"do it")
+        await pilot.press("left")
+        await pilot.press("left")
+        cursor_before = screen.query_one("#prompt", Input).cursor_position
+        await pilot.press("right")
+        # Plain cursor movement (no suggestion pending): moved right by one,
+        # nothing forwarded to the agent as a remote key.
+        assert screen.query_one("#prompt", Input).cursor_position == cursor_before + 1
+        assert fake_client.keys == []
+
+
 async def test_prompt_error_keeps_text(fake_client):
     from herdr_mobile import HerdrError
     fake_client.errors["prompt_agent"] = HerdrError("pane_busy", "pane not at prompt")

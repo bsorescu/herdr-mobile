@@ -1,6 +1,19 @@
 import pytest
 
+import herdr_mobile
 from herdr_mobile import AgentInfo, HerdrError
+
+
+@pytest.fixture(autouse=True)
+def isolate_prompt_history(tmp_path, monkeypatch):
+    """Prevent tests from touching the real
+    ~/.local/state/herdr-mobile/prompt_history.json: HerdrMobileApp(client=...)
+    with no explicit `history=` kwarg constructs a PromptHistoryStore() with
+    no path, which resolves DEFAULT_PROMPT_HISTORY_PATH at call time —
+    patched here to a per-test tmp_path so the real file is never read or
+    written by the test suite.
+    """
+    monkeypatch.setattr(herdr_mobile, "DEFAULT_PROMPT_HISTORY_PATH", tmp_path / "prompt_history.json")
 
 
 class FakeHerdrClient:
