@@ -99,15 +99,49 @@ def trim_trailing_chrome(text: str) -> str:
     return "\n".join(kept)
 
 
+_AGENT_MODE_WINDOW_LINES = 15
+_AGENT_MODE_PATTERNS = [
+    ("auto", re.compile(r"auto mode on", re.IGNORECASE)),
+    ("plan", re.compile(r"plan mode on", re.IGNORECASE)),
+    ("bypass", re.compile(r"bypassing permissions", re.IGNORECASE)),
+]
+
+
+def detect_agent_mode(text: str) -> str | None:
+    """Scan the trailing _AGENT_MODE_WINDOW_LINES lines of agent output for
+    Claude Code's own permission-mode status marker and return a short
+    label: "auto" ("auto mode on"), "plan" ("plan mode on"), or "bypass"
+    ("bypassing permissions"). Returns None when no marker is visible —
+    covers pi and other non-Claude-Code agents, or output where the status
+    line isn't in the scanned window. Scans from the end of the window
+    backwards so the CLOSEST-to-bottom marker wins if more than one somehow
+    appears (the most recent status). Normalizes CRLF and strips ANSI
+    itself, so it can be called directly on raw agent output — specifically
+    on the PRE-TRIM text, since trim_trailing_chrome removes exactly this
+    status line from the displayed output.
+    """
+    text = text.replace("\r\n", "\n").replace("\r", "")
+    lines = text.split("\n")[-_AGENT_MODE_WINDOW_LINES:]
+    for line in reversed(lines):
+        stripped = strip_ansi(line)
+        for label, pattern in _AGENT_MODE_PATTERNS:
+            if pattern.search(stripped):
+                return label
+    return None
+
+
 _RULE_CHARS = "─━═╌┄┈"
 _COLLAPSE_MAX_RUN = 20
 _COLLAPSE_FALLBACK_WIDTH = 40
 _RULE_CHIP_STYLE = "\x1b[30;46m"  # black on cyan — closest to Claude Code's own chip
 _RULE_CHIP_RESET = "\x1b[0m"
+_MODE_ANSI = {"auto": "\x1b[33m", "plan": "\x1b[36m", "bypass": "\x1b[31m"}  # yellow/cyan/red
+_MODE_LEAD_RULE = 2  # short leading rule before an inlined mode word, e.g. "── auto ..."
 
 
 def collapse_wide_rules(
-    text: str, max_run: int = _COLLAPSE_MAX_RUN, width: int = _COLLAPSE_FALLBACK_WIDTH
+    text: str, max_run: int = _COLLAPSE_MAX_RUN, width: int = _COLLAPSE_FALLBACK_WIDTH,
+    mode: str | None = None,
 ) -> str:
     """Collapse over-long horizontal-rule runs (e.g. Claude Code's ~170-char
     input-box border, or full-width message dividers) to fit the actual
@@ -121,14 +155,19 @@ def collapse_wide_rules(
 
     For a line with an over-long run:
       - No other text (a pure divider): collapsed to exactly `width` rule
-        characters — one full row, no wrap.
+        characters — one full row, no wrap. `mode` is never applied here.
       - Other text present (e.g. a right-aligned session name): rebuilt as
         `<rule fill><space><chip><space>──`, right-aligned to exactly
-        `width` VISIBLE characters (the ANSI chip codes don't count). The
-        text fragment is wrapped in a black-on-cyan ANSI chip
-        (`_RULE_CHIP_STYLE`) since the original styling was lost when the
-        line was rebuilt from its ANSI-stripped copy. If the text alone is
-        already >= width, it's emitted alone (still chip-styled).
+        `width` VISIBLE characters (ANSI codes don't count). The text
+        fragment is wrapped in a black-on-cyan ANSI chip (`_RULE_CHIP_STYLE`)
+        since the original styling was lost when the line was rebuilt from
+        its ANSI-stripped copy. If `mode` is given (see detect_agent_mode)
+        and there's room for it too, it's inlined as a short colored prefix
+        instead: `<lead rule><space><mode><space><rule fill><space><chip>
+        ──` — e.g. "── auto ──────────────── herdr-remote-s0 ──" — colored
+        per `_MODE_ANSI` (auto=yellow, plan=cyan, bypass=red), still exactly
+        `width` visible characters overall. If the text alone is already
+        >= width, it's emitted alone (still chip-styled, no mode — no room).
 
     Lines with no over-long run are returned completely untouched (ANSI and
     all). `width` <= 0 falls back to `_COLLAPSE_FALLBACK_WIDTH`.
@@ -154,6 +193,18 @@ def collapse_wide_rules(
             out_lines.append(chip)
             continue
         suffix = " ──"
+        mode_ansi = _MODE_ANSI.get(mode) if mode else None
+        # Fixed overhead of the mode-prefixed layout beyond `mode` + `text`:
+        # lead rule + space + space + space + suffix.
+        mode_overhead = _MODE_LEAD_RULE + 3 + len(suffix)
+        if mode_ansi is not None and len(mode) + len(text_fragment) + mode_overhead <= width:
+            mode_chip = f"{mode_ansi}{mode}{_RULE_CHIP_RESET}"
+            fill = width - len(mode) - len(text_fragment) - mode_overhead
+            out_lines.append(
+                (rule_char * _MODE_LEAD_RULE) + " " + mode_chip + " "
+                + (rule_char * fill) + " " + chip + suffix
+            )
+            continue
         fill = max(0, width - len(text_fragment) - 1 - len(suffix))
         out_lines.append((rule_char * fill) + " " + chip + suffix)
     return "\n".join(out_lines)
@@ -466,11 +517,12 @@ class AgentDetailScreen(Screen):
         Binding("q", "back", "Back"),
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
-        Binding("k", "toggle_remote", "Keys"),
-        Binding("n", "next_agent", "Agent", key_display="n/p"),
-        Binding("p", "prev_agent", "Agent", show=False),
-        Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
-        Binding("d", "scroll_output('down')", "Scroll", show=False),
+        Binding("k", "toggle_remote", "Key"),
+        Binding("n", "next_agent", "Agt", key_display="n/p"),
+        Binding("p", "prev_agent", "Agt", show=False),
+        Binding("u", "scroll_output('up')", "Scr", key_display="u/d"),
+        Binding("d", "scroll_output('down')", "Scr", show=False),
+        Binding("m", "cycle_mode", "Mode"),
     ]
 
     DEFAULT_CSS = """
@@ -537,9 +589,10 @@ class AgentDetailScreen(Screen):
         # which crowds real bindings out at phone width. ctrl+p still opens
         # the command palette (used for screenshots) — this only affects the
         # Footer's own display, not the App-level ctrl+p binding. compact=True
-        # trims the per-entry padding so all 5 labels (Back/Prompt/Keys/
-        # Agent/Scroll) actually fit within a 44-column phone screen instead
-        # of getting clipped.
+        # trims the per-entry padding, and Key/Agt/Scr are abbreviated (from
+        # Keys/Agent/Scroll), so all 6 labels (Back/Prompt/Key/Agt/Scr/Mode)
+        # actually fit within a 44-column phone screen instead of getting
+        # clipped.
         yield Footer(show_command_palette=False, compact=True)
 
     def on_mount(self) -> None:
@@ -640,6 +693,12 @@ class AgentDetailScreen(Screen):
         # stray \r here too so Text.from_ansi never treats it as a
         # carriage-return-overwrite (which wipes all but the last line).
         content = content.replace("\r\n", "\n").replace("\r", "")
+        # Detect the agent's permission mode on the PRE-TRIM text — the
+        # status line this reads is exactly what trim_trailing_chrome
+        # removes from the displayed output below. Threaded into
+        # collapse_wide_rules further down, which inlines it onto the
+        # session border row.
+        mode = detect_agent_mode(content)
         # Insert a space after a leading bullet glyph glued to its text
         # (e.g. "⏺main" -> "⏺ main") — rows otherwise feel glued together.
         content = normalize_bullet_spacing(content)
@@ -654,9 +713,11 @@ class AgentDetailScreen(Screen):
         # Collapse full-width rule runs (input-box borders, message dividers)
         # that would otherwise wrap into several useless "stripe" rows at
         # phone width. Use the RichLog's actual usable width so the collapsed
-        # rule fills the row without wrapping.
+        # rule fills the row without wrapping. The detected permission mode
+        # (if any) is inlined onto the session border row (the one rule row
+        # that carries text) — see collapse_wide_rules' mode param.
         width = log.scrollable_content_region.width or _COLLAPSE_FALLBACK_WIDTH
-        content = collapse_wide_rules(content, width=width)
+        content = collapse_wide_rules(content, width=width, mode=mode)
         log.write(Text.from_ansi(content))
         # immediate=True: apply synchronously so scroll_y/max_scroll_y are consistent
         # right away (a deferred scroll_end leaves scroll_y stale against the freshly
@@ -701,6 +762,21 @@ class AgentDetailScreen(Screen):
         # within this call (see on_scroll_moved's other callers below); poke
         # it explicitly so follow updates immediately.
         self.on_scroll_moved()
+
+    def action_cycle_mode(self) -> None:
+        # ctrl+p is Claude Code's own binding for cycling its permission
+        # mode (auto/plan/bypass); verified as an accepted key spelling for
+        # `herdr pane send-keys` on a live scratch pane before wiring this
+        # up. len("ctrl+p") > 1, so HerdrClient.send_key routes it through
+        # send-keys, not send-text. The inlined mode on the session border
+        # row (see refresh_output/collapse_wide_rules) only reflects the
+        # change on the next READ_POLL_SECONDS refresh.
+        try:
+            self.app.client.send_key(self.pane_id, "ctrl+p")
+        except HerdrError as err:
+            self.app.notify(err.message, title=err.code, severity="error")
+            return
+        self.app.notify("Mode cycle sent", severity="information")
 
     def action_next_agent(self) -> None:
         self.app.cycle_agent(self.pane_id, +1)

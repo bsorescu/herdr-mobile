@@ -172,6 +172,32 @@ async def test_output_collapses_wide_input_box_border(fake_client):
         assert border_strip.cell_length <= log.scrollable_content_region.width
 
 
+async def test_output_inlines_detected_mode_on_session_border_row(fake_client):
+    # The agent's detected permission mode is inlined directly onto the
+    # session border row itself (not a separate widget) — e.g.
+    # "── auto ──────────── herdr-remote-s0 ──". detect_agent_mode runs on
+    # the PRE-TRIM text, since the status line it reads is exactly what
+    # trim_trailing_chrome removes from the displayed output below.
+    border = "─" * 150 + " herdr-remote-s0 ──"
+    fake_client.reads["wA:p1"] = "\n".join([
+        "some real content",
+        border,
+        "⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt",
+    ])
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:
+        screen = await open_detail(app, pilot)
+        log = screen.query_one(RichLog)
+        border_strip = next(strip for strip in log.lines if "herdr-remote-s0" in strip.text)
+        assert "auto" in border_strip.text  # left: the mode word
+        assert border_strip.text.endswith("herdr-remote-s0 ──")  # right: the session chip
+        assert border_strip.text.startswith("──")
+        # No separate mode-line widget exists.
+        assert len(screen.query("#mode-line")) == 0
+        # The status line itself is trimmed from the displayed output.
+        assert not any("auto mode on" in strip.text for strip in log.lines)
+
+
 async def test_output_does_not_clip_long_lines_at_phone_width(fake_client):
     # Regression: RichLog defaults to min_width=78. At phone width (44
     # columns) that made content wrap at 78 and then get horizontally
@@ -546,6 +572,28 @@ async def test_u_d_typed_into_prompt_input_insert_not_scroll(fake_client):
         assert screen.follow is True  # unaffected: keys were consumed by the Input
 
 
+async def test_m_key_sends_ctrl_p_to_cycle_mode(fake_client, monkeypatch):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        notifications = _capture_notifications(app, monkeypatch)
+        await open_detail(app, pilot, "w3:p1")
+        await pilot.press("m")
+        assert ("w3:p1", "ctrl+p") in fake_client.keys
+        infos = [(msg, kw) for msg, kw in notifications if kw.get("severity") == "information"]
+        assert any("Mode cycle sent" in msg for msg, _ in infos)
+
+
+async def test_m_typed_into_prompt_input_inserts_not_cycle(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        assert isinstance(app.focused, Input)
+        await pilot.press("m")
+        assert screen.query_one("#prompt", Input).value == "m"
+        assert fake_client.keys == []  # nothing sent — the Input consumed it
+
+
 async def test_u_scrolls_even_while_remote_bar_visible(fake_client):
     fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
     app = HerdrMobileApp(client=fake_client)
@@ -588,7 +636,7 @@ async def test_detail_footer_fits_44_cols_and_hides_palette(fake_client):
         footer = screen.query_one(Footer)
         keys = list(footer.query(FooterKey))
         descriptions = {k.description for k in keys}
-        assert {"Back", "Prompt", "Keys", "Agent", "Scroll"} <= descriptions
+        assert {"Back", "Prompt", "Key", "Agt", "Scr", "Mode"} <= descriptions
         assert not any("palette" in k.description.lower() for k in keys)
         # Nothing renders past the 44-column screen edge — proves nothing
         # got silently clipped out.

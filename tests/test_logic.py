@@ -5,6 +5,7 @@ from herdr_mobile import (
     collapse_wide_gaps,
     collapse_wide_rules,
     count_dialog_options,
+    detect_agent_mode,
     detect_yn_prompt,
     effective_status,
     normalize_bullet_spacing,
@@ -212,6 +213,48 @@ def test_collapse_wide_rules_falls_back_to_default_width_when_invalid():
     assert result == "─" * 40  # _COLLAPSE_FALLBACK_WIDTH
 
 
+def test_collapse_wide_rules_inlines_mode_on_the_session_border_row():
+    line = "─" * 150 + " herdr-remote-s0 ──"
+    width = 44
+    result = collapse_wide_rules(line, width=width, mode="auto")
+    visible = strip_ansi(result)
+    assert len(visible) == width
+    assert visible.startswith("── auto ")
+    assert visible.endswith("herdr-remote-s0 ──")
+    # The mode word is wrapped in the yellow ANSI code, chip still intact.
+    assert "\x1b[33mauto\x1b[0m" in result
+    assert "\x1b[30;46mherdr-remote-s0\x1b[0m" in result
+
+
+def test_collapse_wide_rules_mode_none_is_unchanged_from_default():
+    line = "─" * 150 + " herdr-remote-s0 ──"
+    width = 44
+    assert collapse_wide_rules(line, width=width) == collapse_wide_rules(line, width=width, mode=None)
+
+
+def test_collapse_wide_rules_mode_never_applied_to_pure_divider():
+    line = "─" * 160  # no text on this row
+    result = collapse_wide_rules(line, width=44, mode="plan")
+    assert result == "─" * 44
+    assert "plan" not in result
+
+
+def test_collapse_wide_rules_mode_colors_match_claude_code():
+    line = "─" * 150 + " herdr-remote-s0 ──"
+    assert "\x1b[33mauto\x1b[0m" in collapse_wide_rules(line, width=44, mode="auto")
+    assert "\x1b[36mplan\x1b[0m" in collapse_wide_rules(line, width=44, mode="plan")
+    assert "\x1b[31mbypass\x1b[0m" in collapse_wide_rules(line, width=44, mode="bypass")
+
+
+def test_collapse_wide_rules_mode_falls_back_when_no_room():
+    # Not enough width for both the mode word and the text: falls back to
+    # the plain (no-mode) rendering rather than overflowing.
+    line = "─" * 150 + " a-very-long-session-name ──"
+    result = collapse_wide_rules(line, width=20, mode="bypass")
+    assert "bypass" not in strip_ansi(result)
+    assert strip_ansi(result) == strip_ansi(collapse_wide_rules(line, width=20))
+
+
 def test_normalize_bullet_spacing_inserts_space_when_glued():
     assert normalize_bullet_spacing("⏺main") == "⏺ main"
     assert normalize_bullet_spacing("◯general-purpose  Reviewing diff") == \
@@ -390,3 +433,46 @@ def test_collapse_wide_gaps_handles_ansi_styled_variant():
     result = collapse_wide_gaps(line)
     assert result == "left · right"
     assert "\x1b" not in result
+
+
+def test_detect_agent_mode_recognizes_auto_plan_bypass():
+    assert detect_agent_mode("⏵⏵ auto mode on (ctrl+p to cycle) · esc to interrupt") == "auto"
+    assert detect_agent_mode("⏸ plan mode on (ctrl+p to cycle)") == "plan"
+    assert detect_agent_mode("bypassing permissions (ctrl+p to cycle)") == "bypass"
+
+
+def test_detect_agent_mode_returns_none_when_no_marker():
+    assert detect_agent_mode("") is None
+    assert detect_agent_mode("\n".join(f"line {i}" for i in range(10))) is None
+
+
+def test_detect_agent_mode_returns_none_for_pi_style_footer():
+    # A non-Claude-Code agent (e.g. pi) has its own footer with no
+    # auto/plan/bypass marker.
+    text = "\n".join([
+        "some output",
+        "─" * 40,
+        "pi · idle · press ? for help",
+    ])
+    assert detect_agent_mode(text) is None
+
+
+def test_detect_agent_mode_handles_ansi_laden_lines():
+    text = "\x1b[33m⏵⏵ auto mode on (ctrl+p to cycle)\x1b[0m"
+    assert detect_agent_mode(text) == "auto"
+
+
+def test_detect_agent_mode_only_scans_trailing_window():
+    old_marker = ["⏵⏵ auto mode on (ctrl+p to cycle)"]
+    filler = [f"line {i}" for i in range(30)]
+    text = "\n".join(old_marker + filler)
+    assert detect_agent_mode(text) is None
+
+
+def test_detect_agent_mode_prefers_closest_to_bottom():
+    text = "\n".join([
+        "plan mode on (ctrl+p to cycle)",
+        "some content in between",
+        "auto mode on (ctrl+p to cycle)",
+    ])
+    assert detect_agent_mode(text) == "auto"

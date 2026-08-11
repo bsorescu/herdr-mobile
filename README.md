@@ -112,6 +112,7 @@ Agents are shown in triage order: `blocked` → `done` → `working` → `idle` 
 | `k` | Toggle the remote-control key bar |
 | `n` / `p` | Cycle to next / previous agent (list order) |
 | `u` / `d` | Scroll output up / down half a page |
+| `m` | Cycle the agent's permission mode (sends `ctrl+p`, same as Claude Code's own binding) |
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
 The output pane follows the agent's live output automatically; scrolling up
@@ -142,6 +143,15 @@ next/previous agent, bar open or closed, so to answer *No* you have to tap
 the on-screen `[n]` button when it's showing (the bar's own hint line says
 `n/p = next/prev agent`, plus `tap buttons to answer` whenever there's
 something to tap).
+
+For Claude Code agents, the detected permission mode (`auto`, `plan`, or
+`bypass`) is shown inline on the session border row at the bottom of the
+output — e.g. `── auto ──────────── my-session ──` — colored to match
+Claude Code's own status line (auto = yellow, plan = cyan, bypass = red).
+Nothing is shown for other agents (e.g. pi) or when no mode marker is
+visible. Press `m` to cycle it — that sends `ctrl+p` to the agent's pane,
+Claude Code's own mode-cycle binding; the display catches up on the next
+poll.
 
 ## Termius tips
 
