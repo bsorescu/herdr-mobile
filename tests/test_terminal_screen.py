@@ -105,6 +105,21 @@ async def test_terminal_esc_blurs_then_q_goes_back(fake_client):
         assert isinstance(app.screen, AgentListScreen)
 
 
+async def test_terminal_ctrl_d_exits_while_input_focused(fake_client):
+    # One-key exit for the shell idiom (ctrl+d = EOF/exit a real shell) —
+    # must work even though the prompt Input is focused by default (Input
+    # itself binds ctrl+d to delete_right; our priority binding must win).
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        prompt = screen.query_one("#prompt", Input)
+        assert prompt.has_focus
+        await pilot.press("ctrl+d")
+        assert app.screen is not screen
+        from herdr_mobile import AgentListScreen
+        assert isinstance(app.screen, AgentListScreen)
+
+
 async def test_terminal_footer_back_tap_works_while_input_focused(fake_client):
     # FooterEntry calls its action directly (not App.simulate_key), so
     # tapping "Back" must work unconditionally, even with the input
@@ -207,7 +222,7 @@ async def test_terminal_footer_fits_44_cols(fake_client):
         entries = list(footer.query(FooterEntry))
         separators = list(footer.query(FooterSeparator))
         descriptions = {e.description for e in entries}
-        assert descriptions == {"Back", "Ask", "Keys", "Scr"}
+        assert descriptions == {"Back", "Exit", "Ask", "Keys", "Scr"}
         assert len(separators) == 2
         for widget in [*entries, *separators]:
             region = widget.region

@@ -1195,6 +1195,7 @@ class TerminalFooter(Horizontal):
     def compose(self) -> ComposeResult:
         s = self._screen
         yield FooterEntry("q", "Back", s.action_back)
+        yield FooterEntry("^d", "Exit", s.action_back)
         yield FooterSeparator()
         yield FooterEntry("i", "Ask", s.action_focus_prompt)
         yield FooterEntry("k", "Keys", s.action_toggle_remote)
@@ -1227,6 +1228,16 @@ class TerminalScreen(Screen):
     BINDINGS = [
         Binding("q", "back", "Back"),
         Binding("escape", "back", show=False),
+        # priority=True: ctrl+d must win over Input's own BINDINGS entry
+        # ("delete,ctrl+d" -> delete_right, textual's built-in forward-delete)
+        # even while the prompt Input is focused. Priority bindings are
+        # checked across the WHOLE focus chain before the key is even
+        # forwarded to the focused widget, so this fires first regardless.
+        # One-key exit for the shell idiom (ctrl+d = EOF/exit a real shell)
+        # — the two-step esc-then-q was friction. Only ever added to
+        # TerminalScreen: AgentDetailScreen has no ctrl+d binding, so there
+        # ctrl+d still just does Input's own delete-right, same as always.
+        Binding("ctrl+d", "back", "Exit", priority=True, key_display="^d"),
         Binding("i", "focus_prompt", "Prompt"),
         Binding("k", "toggle_remote", "Keys"),
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),

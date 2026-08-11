@@ -421,6 +421,20 @@ async def test_escape_blurs_input_without_sending(fake_client):
         assert screen.query_one("#prompt", Input).value == "do it"  # text kept
 
 
+async def test_ctrl_d_is_unbound_on_agent_detail_screen(fake_client):
+    # ctrl+d's priority binding is only ever added to TerminalScreen — the
+    # agent detail screen has no such binding, so ctrl+d stays exactly as
+    # it always was (Input's own built-in delete-right while focused;
+    # navigation-wise, nothing happens).
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        await pilot.press(*"do it")
+        await pilot.press("ctrl+d")
+        assert app.screen is screen  # did not navigate away
+
+
 def _capture_notifications(app, monkeypatch):
     notifications = []
     monkeypatch.setattr(app, "notify", lambda message, **kwargs: notifications.append((message, kwargs)))

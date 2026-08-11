@@ -192,6 +192,7 @@ session is doing) and opens a terminal screen for it.
 | Key | Action |
 |---|---|
 | `i` | Focus the command box (already focused when the screen opens — see below; useful again after `esc` blurs it) |
+| `ctrl+d` | Exit straight back to the agent list — works even while the command box is focused (see below) |
 | `k` | Toggle the remote-control key bar (`↑ ↓ Enter Esc` — for `less`, `vim`, interactive menus, tab-completion, etc.) |
 | `u` / `d` | Scroll output up / down half a page |
 | `q` | Back to the agent list — closes the bar first if it's open, same as the agent detail screen |
@@ -205,7 +206,13 @@ the box is focused by default, letters that are screen bindings elsewhere
 (`q`, `u`, `d`, `i`, …) simply type into it like any other key; `esc`
 blurs it (without leaving the screen) if you want the physical keys back —
 tapping the footer's `Back`/`Keys` entries always works regardless of
-focus.
+focus. `ctrl+d` is the one exception: the shell idiom for "exit" is worth
+keeping as a single key, so it's wired to go straight back to the agent
+list even with the box focused (a `q`-then-nothing-else shortcut, instead
+of `esc` then `q`). This never conflicts with anything you type or send —
+herdr-mobile sends whole lines via `pane run`, never forwards a literal
+`ctrl+d` keystroke to the pane itself, so there's no ambiguity with a real
+shell's own EOF handling.
 
 The terminal screen reuses the exact same output pipeline as an agent's
 detail screen (glued-bullet spacing, wide-rule/wide-gap collapsing, ANSI
