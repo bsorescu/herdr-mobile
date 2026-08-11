@@ -717,27 +717,57 @@ async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
         assert screen.query_one("#remote-bar").display is False
 
 
-async def test_detail_footer_fits_44_cols_and_hides_palette(fake_client):
-    # Regression: at 44 columns the Footer used to truncate ("p Pr|^p
-    # palette"), and the command-palette entry crowded out real bindings.
-    # Every label the user relies on tapping must actually fit on screen,
-    # and the palette entry must be gone (while ctrl+p itself still works —
-    # that's an App-level binding, untouched by Footer(show_command_palette)).
-    from textual.widgets import Footer
-    from textual.widgets._footer import FooterKey
+async def test_detail_footer_fits_44_cols_with_separators(fake_client):
+    # Regression: at 44 columns the old stock Footer used to truncate. The
+    # detail screen now uses a custom DetailFooter that groups keys with
+    # "│" separators (exit · actions-on-agent · navigation) — every entry
+    # AND both separators must actually fit on a 44-column phone screen.
+    from herdr_mobile import DetailFooter, FooterEntry, FooterSeparator
 
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test(size=(44, 30)) as pilot:
         screen = await open_detail(app, pilot)
-        footer = screen.query_one(Footer)
-        keys = list(footer.query(FooterKey))
-        descriptions = {k.description for k in keys}
-        assert {"Back", "Prompt", "Key", "Agt", "Scr", "Mode"} <= descriptions
-        assert not any("palette" in k.description.lower() for k in keys)
+        footer = screen.query_one(DetailFooter)
+        entries = list(footer.query(FooterEntry))
+        separators = list(footer.query(FooterSeparator))
+        descriptions = {e.description for e in entries}
+        assert descriptions == {"Back", "Ask", "Keys", "Mode", "Agt", "Scr"}
+        assert len(separators) == 2
         # Nothing renders past the 44-column screen edge — proves nothing
         # got silently clipped out.
-        for k in keys:
-            assert k.region.right <= 44, f"{k.key!r} {k.description!r} clipped: {k.region}"
+        for widget in [*entries, *separators]:
+            region = widget.region
+            assert region.width > 0
+            assert region.right <= 44, f"{widget!r} clipped: {region}"
+            assert region.bottom <= 30
+
+
+async def test_detail_footer_ctrl_p_still_opens_command_palette(fake_client):
+    # ctrl+p is an App-level binding, independent of any Footer/custom
+    # footer — must keep working even though the detail screen no longer
+    # uses a stock Footer at all (so there's no "^p palette" entry to hide).
+    from textual.command import CommandPalette
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:
+        await open_detail(app, pilot)
+        await pilot.press("ctrl+p")
+        await pilot.pause()
+        assert any(isinstance(s, CommandPalette) for s in app.screen_stack)
+
+
+async def test_detail_footer_keys_entry_tap_toggles_remote_bar(fake_client):
+    # Proves the custom footer's tap wiring actually works end to end.
+    from herdr_mobile import FooterEntry
+
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test(size=(44, 30)) as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
+        bar = screen.query_one("#remote-bar")
+        assert bar.display is False
+        keys_entry = next(e for e in screen.query(FooterEntry) if e.description == "Keys")
+        await pilot.click(keys_entry)
+        assert bar.display is True
 
 
 async def test_digit_buttons_scale_to_dialog_option_count(fake_client):

@@ -629,16 +629,121 @@ class AgentListScreen(Screen):
         self.query_one(DataTable).action_cursor_up()
 
 
+class FooterEntry(Static):
+    """A single tappable key+description entry for the detail screen's
+    custom footer (see DetailFooter). Visually mirrors Textual's own
+    Footer (key highlighted, description dim), but calls `action` directly
+    on tap rather than simulating the physical key — the same pattern the
+    remote-control bar's own Buttons already use (_send_remote_key), and
+    deliberately NOT textual's App.simulate_key: that would re-enter the
+    normal key-dispatch path, including AgentDetailScreen.on_key's
+    "Input focused -> do nothing" guard, so tapping e.g. Back while the
+    prompt Input happens to be focused would silently do nothing. Calling
+    the action directly means every entry stays tappable unconditionally,
+    matching the requirement that these mirror, but don't depend on, the
+    physical-key bindings (which remain registered as-is for physical keys).
+    """
+
+    DEFAULT_CSS = """
+    FooterEntry {
+        width: auto;
+        height: 1;
+    }
+    FooterEntry:hover {
+        text-style: reverse;
+    }
+    """
+
+    def __init__(self, key_display: str, description: str, action) -> None:
+        text = Text()
+        text.append(key_display, style="bold cyan")
+        text.append(" " + description, style="dim")
+        super().__init__(text)
+        self.key_display = key_display
+        self.description = description
+        self._action = action
+
+    def on_click(self) -> None:
+        self._action()
+
+
+class FooterSeparator(Static):
+    """Dim, non-interactive "│" divider between DetailFooter key groups —
+    Textual's built-in Footer has no equivalent (Binding.Group merges keys
+    under one shared description label, a different UI pattern; it doesn't
+    render a plain separator between otherwise-independent entries)."""
+
+    DEFAULT_CSS = """
+    FooterSeparator {
+        width: auto;
+        height: 1;
+        color: $text-muted;
+    }
+    """
+
+    def __init__(self) -> None:
+        super().__init__("│")
+
+
+class DetailFooter(Horizontal):
+    """Custom compact footer for AgentDetailScreen ONLY — groups its keys
+    visually (exit · actions-on-agent · navigation) with "│" separators,
+    which Textual's stock Footer (used everywhere else, e.g.
+    AgentListScreen) can't render. Every entry stays tappable and mirrors
+    an existing screen Binding/action; the Bindings themselves stay
+    registered unchanged for physical keys.
+    """
+
+    DEFAULT_CSS = """
+    DetailFooter {
+        height: 1;
+        background: $footer-background;
+    }
+    DetailFooter FooterEntry {
+        margin: 0 1 0 0;
+    }
+    DetailFooter FooterSeparator {
+        margin: 0;
+    }
+    """
+
+    def __init__(self, screen: "AgentDetailScreen") -> None:
+        super().__init__()
+        self._screen = screen
+
+    def compose(self) -> ComposeResult:
+        # "Ask"/"Agt"/"Scr" are shortened (from Prompt/Agent/Scroll) to fit
+        # all 6 entries plus 2 separators within a 44-column phone screen
+        # (measured empirically — see test_detail_footer_fits_44_cols_
+        # with_separators). "Back"/"Keys"/"Mode" are already short enough
+        # to stay full.
+        s = self._screen
+        yield FooterEntry("q", "Back", s.action_back)
+        yield FooterSeparator()
+        yield FooterEntry("i", "Ask", s.action_focus_prompt)
+        yield FooterEntry("k", "Keys", s.action_toggle_remote)
+        yield FooterEntry("m", "Mode", s.action_cycle_mode)
+        yield FooterSeparator()
+        yield FooterEntry("n/p", "Agt", s.action_next_agent)
+        yield FooterEntry("u/d", "Scr", lambda: s.action_scroll_output("up"))
+
+
 class AgentDetailScreen(Screen):
+    # Descriptions/key_display here are no longer rendered by a Footer —
+    # this screen uses the custom DetailFooter instead (see its compose()
+    # for the actual visible labels, grouped with "│" separators). Kept
+    # full and accurate anyway: these Bindings are what actually make the
+    # physical keys work, and their descriptions still surface in the
+    # command palette / key panel.
     BINDINGS = [
         Binding("q", "back", "Back"),
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
-        Binding("k", "toggle_remote", "Key"),
-        Binding("n", "next_agent", "Agt", key_display="n/p"),
-        Binding("p", "prev_agent", "Agt", show=False),
-        Binding("u", "scroll_output('up')", "Scr", key_display="u/d"),
-        Binding("d", "scroll_output('down')", "Scr", show=False),
+        Binding("k", "toggle_remote", "Keys"),
+        Binding("n", "next_agent", "Agent", key_display="n/p"),
+        Binding("p", "prev_agent", "Agent", show=False),
+        Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
+        Binding("d", "scroll_output('down')", "Scroll", show=False),
         Binding("m", "cycle_mode", "Mode"),
     ]
 
@@ -702,15 +807,14 @@ class AgentDetailScreen(Screen):
                     yield Button(str(i), id=f"rk-{i}")
             yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
-        # show_command_palette=False: hides the "^p palette" footer entry,
-        # which crowds real bindings out at phone width. ctrl+p still opens
-        # the command palette (used for screenshots) — this only affects the
-        # Footer's own display, not the App-level ctrl+p binding. compact=True
-        # trims the per-entry padding, and Key/Agt/Scr are abbreviated (from
-        # Keys/Agent/Scroll), so all 6 labels (Back/Prompt/Key/Agt/Scr/Mode)
-        # actually fit within a 44-column phone screen instead of getting
-        # clipped.
-        yield Footer(show_command_palette=False, compact=True)
+        # Custom footer (not Textual's stock Footer): groups keys visually
+        # with "│" separators — exit · actions-on-agent · navigation — which
+        # Textual 8.2.8's Footer can't render (its only grouping mechanism,
+        # Binding.Group, merges keys under one shared label, not a plain
+        # separator between independent entries). ctrl+p still opens the
+        # command palette regardless (App-level binding, unrelated to any
+        # Footer).
+        yield DetailFooter(self)
 
     def on_mount(self) -> None:
         self.query_one("#remote-bar").display = False

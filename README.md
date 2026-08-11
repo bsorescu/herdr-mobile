@@ -116,6 +116,14 @@ Agents are shown in triage order: `blocked` → `done` → `working` → `idle` 
 | `m` | Cycle the agent's permission mode (sends `ctrl+p`, same as Claude Code's own binding) |
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
+The footer at the bottom groups its entries — `q Back` │ `i Ask` `k Keys`
+`m Mode` │ `n/p Agt` `u/d Scr` — visually separating the exit key from
+actions on the current agent from navigation between/within agents. Every
+entry is tappable (not just readable), and does the same thing as its
+physical key regardless of what else has focus. A few labels are
+abbreviated (`Ask` for the prompt box, `Agt`/`Scr` for agent-cycling/scroll)
+to fit all six entries and both separators on a 44-column phone screen.
+
 The output pane follows the agent's live output automatically; scrolling up
 pauses following (so you can read history without it jumping), scrolling
 back to the bottom resumes it. `u`/`d` scroll it half a page at a time and
