@@ -20,12 +20,13 @@ from __future__ import annotations
 
 import asyncio
 import sys
+import tempfile
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from herdr_mobile import AgentInfo, HerdrMobileApp  # noqa: E402
+from herdr_mobile import AccessHistoryStore, AgentInfo, HerdrMobileApp, PromptHistoryStore  # noqa: E402
 
 DOCS_DIR = REPO_ROOT / "docs"
 
@@ -74,23 +75,38 @@ BLOCKED_OUTPUT = "\n".join([
 async def make_demo() -> None:
     DOCS_DIR.mkdir(exist_ok=True)
 
-    # --- list screen -------------------------------------------------
-    client = FakeHerdrClient(agents=DEMO_AGENTS)
-    app = HerdrMobileApp(client=client)
-    async with app.run_test(size=DEMO_SIZE) as pilot:
-        await pilot.pause()
-        svg = app.export_screenshot(title="herdr-mobile")
-        (DOCS_DIR / "demo-list.svg").write_text(svg)
+    # Scratch history paths: HerdrMobileApp(client=...) with no explicit
+    # history=/access_history= would otherwise read/write the REAL
+    # ~/.local/state/herdr-mobile/{prompt,access}_history.json (the detail
+    # screenshot below calls open_agent(), which records access history) --
+    # same isolation the test suite's conftest.py fixtures apply, needed
+    # here too since this script runs outside pytest.
+    with tempfile.TemporaryDirectory() as scratch_dir:
+        scratch = Path(scratch_dir)
 
-    # --- detail screen (blocked agent, remote bar auto-shown) ---------
-    client = FakeHerdrClient(agents=DEMO_AGENTS, reads={"wA:p1": BLOCKED_OUTPUT})
-    app = HerdrMobileApp(client=client)
-    async with app.run_test(size=DEMO_SIZE) as pilot:
-        await pilot.pause()
-        app.open_agent("wA:p1")
-        await pilot.pause()
-        svg = app.export_screenshot(title="herdr-mobile")
-        (DOCS_DIR / "demo-detail.svg").write_text(svg)
+        def fresh_histories():
+            return (PromptHistoryStore(scratch / "prompt_history.json"),
+                    AccessHistoryStore(scratch / "access_history.json"))
+
+        # --- list screen ---------------------------------------------
+        client = FakeHerdrClient(agents=DEMO_AGENTS)
+        history, access_history = fresh_histories()
+        app = HerdrMobileApp(client=client, history=history, access_history=access_history)
+        async with app.run_test(size=DEMO_SIZE) as pilot:
+            await pilot.pause()
+            svg = app.export_screenshot(title="herdr-mobile")
+            (DOCS_DIR / "demo-list.svg").write_text(svg)
+
+        # --- detail screen (blocked agent, remote bar auto-shown) -----
+        client = FakeHerdrClient(agents=DEMO_AGENTS, reads={"wA:p1": BLOCKED_OUTPUT})
+        history, access_history = fresh_histories()
+        app = HerdrMobileApp(client=client, history=history, access_history=access_history)
+        async with app.run_test(size=DEMO_SIZE) as pilot:
+            await pilot.pause()
+            app.open_agent("wA:p1")
+            await pilot.pause()
+            svg = app.export_screenshot(title="herdr-mobile")
+            (DOCS_DIR / "demo-detail.svg").write_text(svg)
 
     print(f"Wrote {DOCS_DIR / 'demo-list.svg'}")
     print(f"Wrote {DOCS_DIR / 'demo-detail.svg'}")
