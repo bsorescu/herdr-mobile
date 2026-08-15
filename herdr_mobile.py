@@ -892,6 +892,8 @@ class AgentDetailScreen(Screen):
         self._auto_shown = False
         self._bar_manual = False  # bar shown via "k" (action_toggle_remote), not auto-shown
         self._last_read = ""  # last fetched content, for sizing the digit row
+        # (content, width) actually on screen — see refresh_output().
+        self._render_key: tuple[str, int] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(self.pane_id, id="detail-header")
@@ -1018,6 +1020,27 @@ class AgentDetailScreen(Screen):
             return
         self._last_read = content  # for _sync_remote_bar_buttons()
         log = self.query_one(RichLog)
+        # Skip a rewrite that would produce exactly what is already on screen.
+        # An idle agent returns byte-identical output every poll, and clearing
+        # and rewriting all 200 rows for an identical result costs ~20ms of
+        # main-thread work and pushes a full repaint down the SSH link, twice a
+        # minute, per open screen.
+        #
+        # Width is part of the key, not just the content: collapse_wide_rules
+        # fits the output to the RichLog's current width, and there is no
+        # on_resize handler — a rotate is picked up precisely BECAUSE the next
+        # poll re-renders. Keying on content alone would leave a rotated phone
+        # showing rules cut for the old width until the agent happened to print
+        # something. Read before clear(), consistently, so the comparison is
+        # like-for-like poll to poll.
+        render_key = (content, log.scrollable_content_region.width)
+        if render_key == self._render_key:
+            # Status can flip while the text stands still, so the answer
+            # buttons still need re-syncing (~0.25ms) — it is the redraw that
+            # is skipped, not the state.
+            self._sync_remote_bar_buttons()
+            return
+        self._render_key = render_key
         log.clear()
         # Belt and braces: HerdrClient already normalizes \r\n, but strip any
         # stray \r here too so Text.from_ansi never treats it as a
@@ -1300,6 +1323,8 @@ class TerminalScreen(Screen):
         super().__init__()
         self.pane_id = pane_id
         self.follow = True
+        # (content, width) actually on screen — see refresh_output().
+        self._render_key: tuple[str, int] | None = None
 
     def compose(self) -> ComposeResult:
         yield Static(f"{self.pane_id} · terminal", id="detail-header")
@@ -1359,6 +1384,13 @@ class TerminalScreen(Screen):
             self.app.notify(err.message, title=err.code, severity="error")
             return
         log = self.query_one(RichLog)
+        # Same skip as AgentDetailScreen.refresh_output(), same reasoning: an
+        # idle shell re-reads identical bytes, and width belongs in the key
+        # because there is no on_resize handler.
+        render_key = (content, log.scrollable_content_region.width)
+        if render_key == self._render_key:
+            return
+        self._render_key = render_key
         log.clear()
         content = content.replace("\r\n", "\n").replace("\r", "")
         content = normalize_ambiguous_glyphs(content)
