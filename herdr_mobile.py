@@ -569,6 +569,7 @@ class AccessHistoryStore:
 
 
 from rich.text import Text
+from textual import work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -980,7 +981,9 @@ class AgentDetailScreen(Screen):
                 self.pane_id, HerdrError("agent_not_found", f"agent target {self.pane_id} not found"))
             return
         self.refresh_header()
-        self.refresh_output()
+        # poll_output(), not refresh_output(): the CLI read goes to a worker
+        # thread so this timer never blocks the event loop.
+        self.poll_output()
 
     def _agent(self) -> AgentInfo | None:
         for a in self.app.agents:
@@ -1007,7 +1010,32 @@ class AgentDetailScreen(Screen):
                 bar.display = False
             self._auto_shown = False
 
+    @work(thread=True, exclusive=True, group="read-output")
+    def poll_output(self) -> None:
+        """Timer path for refresh_output(): the CLI read runs off the event loop.
+
+        See HerdrMobileApp.poll_agents() for why this matters — same problem,
+        and on this screen it fires every READ_POLL_SECONDS while the user is
+        actively reading and scrolling, so a blocked event loop is felt
+        immediately.
+
+        The follow check is repeated on the event-loop side in
+        _render_output(): the user can scroll up while the read is in flight,
+        and content fetched before that must not land on top of the history
+        they stopped to read.
+        """
+        if not self.follow:
+            return
+        try:
+            content = self.app.client.read_agent(self.pane_id)
+        except HerdrError as err:
+            self.app.call_from_thread(self.app.handle_agent_error, self.pane_id, err)
+            return
+        self.app.call_from_thread(self._render_output, content)
+
     def refresh_output(self) -> None:
+        """Synchronous fetch + render, for callers that need the screen current
+        before they return (resuming follow, immediately after a prompt)."""
         if not self.follow:
             # User scrolled up to read history: freeze content in place. read_agent
             # returns a sliding window, so fetching now would silently replace the
@@ -1017,6 +1045,14 @@ class AgentDetailScreen(Screen):
             content = self.app.client.read_agent(self.pane_id)
         except HerdrError as err:
             self.app.handle_agent_error(self.pane_id, err)
+            return
+        self._render_output(content)
+
+    def _render_output(self, content: str) -> None:
+        """Event-loop half of a refresh. No I/O, so a worker can hand here."""
+        if self.app.screen is not self or not self.follow:
+            # The screen was popped, or the user scrolled up, while the read
+            # was in flight on the worker thread.
             return
         self._last_read = content  # for _sync_remote_bar_buttons()
         log = self.query_one(RichLog)
@@ -1377,7 +1413,21 @@ class TerminalScreen(Screen):
             self.app.pop_screen()
             self.app.open_agent(self.pane_id)
             return
-        self.refresh_output()
+        # poll_output(), not refresh_output() — see AgentDetailScreen._tick().
+        self.poll_output()
+
+    @work(thread=True, exclusive=True, group="read-pane")
+    def poll_output(self) -> None:
+        """Timer path for refresh_output() — see AgentDetailScreen.poll_output()."""
+        if not self.follow:
+            return
+        try:
+            content = self.app.client.read_pane(self.pane_id)
+        except HerdrError as err:
+            self.app.call_from_thread(
+                self.app.notify, err.message, title=err.code, severity="error")
+            return
+        self.app.call_from_thread(self._render_output, content)
 
     def refresh_output(self) -> None:
         if not self.follow:
@@ -1388,6 +1438,12 @@ class TerminalScreen(Screen):
             content = self.app.client.read_pane(self.pane_id)
         except HerdrError as err:
             self.app.notify(err.message, title=err.code, severity="error")
+            return
+        self._render_output(content)
+
+    def _render_output(self, content: str) -> None:
+        """Event-loop half of a refresh. No I/O, so a worker can hand here."""
+        if self.app.screen is not self or not self.follow:
             return
         log = self.query_one(RichLog)
         # Same skip as AgentDetailScreen.refresh_output(), same reasoning: an
@@ -1528,21 +1584,61 @@ class HerdrMobileApp(App):
 
     def on_mount(self) -> None:
         self.push_screen(AgentListScreen())
-        self.set_interval(LIST_POLL_SECONDS, self.refresh_agents)
+        self.set_interval(LIST_POLL_SECONDS, self.poll_agents)
+
+    @work(thread=True, exclusive=True, group="list-agents")
+    def poll_agents(self) -> None:
+        """Timer path for refresh_agents(): the CLI call runs off the event loop.
+
+        `herdr list` is a subprocess with a 10s timeout, and every screen
+        update, keypress and scroll is serviced by the same event loop that
+        was executing it — so on a slow or hung CLI the whole UI froze for
+        the duration of the call. That is worst exactly where this app is
+        meant to be used: a phone over SSH.
+
+        Only the subprocess runs on the worker thread. Everything that
+        touches widgets or app state is handed back to the event loop via
+        call_from_thread, so there is no concurrent mutation to reason about.
+
+        exclusive=True: if a call ever outlasts LIST_POLL_SECONDS, the next
+        tick replaces the in-flight worker instead of stacking more threads
+        onto a CLI that is already struggling.
+        """
+        try:
+            agents = self.client.list_agents()
+        except HerdrError as err:
+            self.call_from_thread(self._handle_list_error, err)
+            return
+        self.call_from_thread(self._apply_agents, agents)
 
     def refresh_agents(self) -> None:
-        screen = self.screen_stack[-1] if self.screen_stack else None
-        list_screen = screen if isinstance(screen, AgentListScreen) else None
+        """Synchronous fetch + apply, for callers that need the agent list
+        up to date before they return. Kept as the direct entry point; the
+        2-3s pollers go through poll_agents() instead."""
         try:
-            self.agents = sort_agents_by_recency(
-                self.client.list_agents(), self.seen, self.access_history.entries)
+            agents = self.client.list_agents()
         except HerdrError as err:
-            if not self.agents:
-                if list_screen is not None:
-                    list_screen.show_error(err)
-            else:
-                self.notify(err.message, title=err.code, severity="error")
+            self._handle_list_error(err)
             return
+        self._apply_agents(agents)
+
+    def _list_screen(self) -> "AgentListScreen | None":
+        screen = self.screen_stack[-1] if self.screen_stack else None
+        return screen if isinstance(screen, AgentListScreen) else None
+
+    def _handle_list_error(self, err: HerdrError) -> None:
+        list_screen = self._list_screen()
+        if not self.agents:
+            if list_screen is not None:
+                list_screen.show_error(err)
+        else:
+            self.notify(err.message, title=err.code, severity="error")
+
+    def _apply_agents(self, agents: list[AgentInfo]) -> None:
+        """Event-loop half of a refresh: sort, reconcile pending prompts and
+        repaint. Never does I/O, so it is safe to hand here from a worker."""
+        list_screen = self._list_screen()
+        self.agents = sort_agents_by_recency(agents, self.seen, self.access_history.entries)
 
         live_pane_ids = {a.pane_id for a in self.agents}
         self.pending_prompts = {p: t for p, t in self.pending_prompts.items() if p in live_pane_ids}
