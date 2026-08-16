@@ -31,9 +31,8 @@ socket protocol use.
   for other platforms)
 - Python `>=3.12` (uv will fetch this for you if it's not already installed)
 
-**Platforms:** tested on macOS; Linux should work identically (nothing
-platform-specific — plain Python/Textual over the `herdr` CLI), reports
-welcome. Windows is untested and undeclared.
+**Platforms:** tested on macOS; Linux confirmed (Debian — thanks
+[@dngr2](https://github.com/dngr2)). Windows is untested and undeclared.
 
 ## Install
 
