@@ -549,7 +549,7 @@ async def test_remote_bar_hidden_then_toggles(fake_client):
         screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
         bar = screen.query_one("#remote-bar")
         assert bar.display is False
-        await pilot.press("k")
+        await pilot.press("a")
         assert bar.display is True
         await pilot.press("q")
         assert bar.display is False
@@ -784,13 +784,67 @@ async def test_g_G_scroll_even_while_remote_bar_visible(fake_client):
         assert fake_client.keys == []
 
 
+async def test_j_k_scroll_one_line(fake_client):
+    # vim-style line scroll, freed by moving the bar toggle to "a" and
+    # dropping n/p cycling.
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        bottom = log.scroll_y
+        await pilot.press("k")
+        assert log.scroll_y == bottom - 1
+        assert screen.follow is False
+        await pilot.press("k")
+        assert log.scroll_y == bottom - 2
+        await pilot.press("j")
+        assert log.scroll_y == bottom - 1
+        await pilot.press("j")  # back at the bottom -> follow resumes
+        assert log.scroll_y == bottom
+        assert screen.follow is True
+
+
+async def test_j_k_typed_into_prompt_input_insert_not_scroll(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("i")
+        assert isinstance(app.focused, Input)
+        scroll_before = log.scroll_y
+        await pilot.press("j")
+        await pilot.press("k")
+        assert screen.query_one("#prompt", Input).value == "jk"
+        assert log.scroll_y == scroll_before
+        assert screen.follow is True
+
+
+async def test_j_k_scroll_even_while_remote_bar_visible(fake_client):
+    # "k" used to toggle the bar; it must now scroll even while the bar is
+    # open (the toggle lives on "a"), same as u/d and g/G already do.
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        log = await settle_at_bottom(screen, pilot)
+        scroll_before = log.scroll_y
+        await pilot.press("k")
+        assert log.scroll_y == scroll_before - 1
+        assert screen.query_one("#remote-bar").display is True  # did NOT toggle
+        # j/k are not remote keys: nothing forwarded to the agent
+        assert fake_client.keys == []
+
+
 async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
     from textual.widgets import Static
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         assert screen.query_one("#remote-bar").display is True
-        await pilot.press("k")  # toggle the bar off
+        await pilot.press("a")  # toggle the bar off
         assert screen.query_one("#remote-bar").display is False
 
 
@@ -808,7 +862,7 @@ async def test_detail_footer_fits_44_cols_with_separators(fake_client):
         entries = list(footer.query(FooterEntry))
         separators = list(footer.query(FooterSeparator))
         descriptions = {e.description for e in entries}
-        assert descriptions == {"Back", "Ask", "Keys", "Mod", "Scr"}
+        assert descriptions == {"Back", "Ask", "Answer", "Mod", "Scr"}
         assert len(separators) == 2
         # Nothing renders past the 44-column screen edge — proves nothing
         # got silently clipped out.
@@ -842,7 +896,7 @@ async def test_detail_footer_keys_entry_tap_toggles_remote_bar(fake_client):
         screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
         bar = screen.query_one("#remote-bar")
         assert bar.display is False
-        keys_entry = next(e for e in screen.query(FooterEntry) if e.description == "Keys")
+        keys_entry = next(e for e in screen.query(FooterEntry) if e.description == "Answer")
         await pilot.click(keys_entry)
         assert bar.display is True
 
@@ -883,7 +937,7 @@ async def test_bar_open_with_no_dialog_shows_only_navigation_core(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
-        await pilot.press("k")  # open manually — no dialog in reads
+        await pilot.press("a")  # open manually — no dialog in reads
         assert screen.query_one("#remote-bar").display is True
         for key_name in ["up", "down", "enter", "esc"]:
             assert screen.query_one(f"#rk-{key_name}", Button).display is True
@@ -910,7 +964,7 @@ async def test_non_blocked_agent_ignores_text_that_looks_like_a_dialog(fake_clie
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "w3:p1")  # working, no auto-show
-        await pilot.press("k")  # open manually
+        await pilot.press("a")  # open manually
         assert screen.query_one("#remote-bar").display is True
         for key_name in ["up", "down", "enter", "esc"]:
             assert screen.query_one(f"#rk-{key_name}", Button).display is True
@@ -995,9 +1049,9 @@ async def test_manually_opened_bar_stays_open_across_blocked_to_working(fake_cli
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         assert screen.query_one("#remote-bar").display is True
-        await pilot.press("k")  # close the auto-shown bar
+        await pilot.press("a")  # close the auto-shown bar
         assert screen.query_one("#remote-bar").display is False
-        await pilot.press("k")  # reopen it manually -> now user-driven
+        await pilot.press("a")  # reopen it manually -> now user-driven
         assert screen.query_one("#remote-bar").display is True
 
         fake_client.agents = [

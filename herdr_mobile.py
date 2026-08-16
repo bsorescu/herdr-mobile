@@ -818,13 +818,14 @@ class DetailFooter(Horizontal):
         # "Ask"/"Mod"/"Scr" are shortened (from Prompt/Mode/Scroll) to fit
         # all 5 entries plus 2 separators within a 44-column phone screen
         # (measured empirically — see
-        # test_detail_footer_fits_44_cols_with_separators). "Back"/"Keys"
-        # are already short enough to stay full.
+        # test_detail_footer_fits_44_cols_with_separators). "Back"/"Answer"
+        # are short enough to stay full — dropping n/p cycling freed the
+        # room "Answer" needs.
         s = self._screen
         yield FooterEntry("q", "Back", s.action_back)
         yield FooterSeparator()
         yield FooterEntry("i", "Ask", s.action_focus_prompt)
-        yield FooterEntry("k", "Keys", s.action_toggle_remote)
+        yield FooterEntry("a", "Answer", s.action_toggle_remote)
         yield FooterEntry("m", "Mod", s.action_cycle_mode)
         yield FooterSeparator()
         yield FooterEntry("u/d", "Scr", lambda: s.action_scroll_output("up"))
@@ -841,10 +842,16 @@ class AgentDetailScreen(Screen):
         Binding("q", "back", "Back"),
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
-        Binding("k", "toggle_remote", "Keys"),
+        Binding("a", "toggle_remote", "Answer"),
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
         Binding("d", "scroll_output('down')", "Scroll", show=False),
         Binding("m", "cycle_mode", "Mode"),
+        # vim-style line scroll — j/k freed by moving the remote bar toggle
+        # to "a" (Answer) and dropping n/p cycling (2026-08-16). Like g/G:
+        # README-only power-user keys, not in the footer (u/d already holds
+        # the "Scr" slot there).
+        Binding("j", "scroll_output('down', 1)", "Scroll", show=False),
+        Binding("k", "scroll_output('up', 1)", "Scroll", show=False),
         # vim-style scroll jumps. Not shown in the (custom, hand-composed)
         # footer — a 44-col regression test gates that decision; these stay
         # README-only power-user keys, same as physical keys always work
@@ -888,7 +895,7 @@ class AgentDetailScreen(Screen):
         self.pane_id = pane_id
         self.follow = True
         self._auto_shown = False
-        self._bar_manual = False  # bar shown via "k" (action_toggle_remote), not auto-shown
+        self._bar_manual = False  # bar shown via "a" (action_toggle_remote), not auto-shown
         self._last_read = ""  # last fetched content, for sizing the digit row
         # (content, width) actually on screen — see refresh_output().
         self._render_key: tuple[str, int] | None = None
@@ -999,7 +1006,7 @@ class AgentDetailScreen(Screen):
             self._sync_remote_bar_buttons()
         elif st != "blocked":
             # Auto-hide only a bar that WE auto-showed, not one the user
-            # opened manually via "k" — that stays open across the flip.
+            # opened manually via "a" — that stays open across the flip.
             if bar.display and not self._bar_manual:
                 bar.display = False
             self._auto_shown = False
@@ -1158,16 +1165,17 @@ class AgentDetailScreen(Screen):
         if bar.display:
             self._sync_remote_bar_buttons()
 
-    def action_scroll_output(self, direction: str) -> None:
+    def action_scroll_output(self, direction: str, lines: int | None = None) -> None:
         # Screen-level binding so it works regardless of which widget has focus
         # (touch clients like Termius can't send wheel events; physical arrows
         # only reach the RichLog while it's focused, which is fragile after
         # tapping other widgets). The Input widget consumes/stops printable
         # keys itself before they'd ever reach this binding, so typing "u"/"d"
-        # into the prompt still inserts characters instead of scrolling.
+        # (or "j"/"k") into the prompt still inserts characters instead of
+        # scrolling. `lines` defaults to half a page (u/d); j/k pass 1.
         log = self.query_one(RichLog)
-        half_page = max(1, log.size.height // 2)
-        delta = -half_page if direction == "up" else half_page
+        step = lines if lines is not None else max(1, log.size.height // 2)
+        delta = -step if direction == "up" else step
         log.scroll_relative(y=delta, animate=False, immediate=True)
         # scroll_y's reactive watcher isn't guaranteed to fire synchronously
         # within this call (see on_scroll_moved's other callers below); poke
@@ -1286,7 +1294,7 @@ class TerminalFooter(Horizontal):
         yield FooterEntry("^d", "Exit", s.action_back)
         yield FooterSeparator()
         yield FooterEntry("i", "Ask", s.action_focus_prompt)
-        yield FooterEntry("k", "Keys", s.action_toggle_remote)
+        yield FooterEntry("a", "Keys", s.action_toggle_remote)
         yield FooterSeparator()
         yield FooterEntry("u/d", "Scr", lambda: s.action_scroll_output("up"))
 
@@ -1327,11 +1335,17 @@ class TerminalScreen(Screen):
         # ctrl+d still just does Input's own delete-right, same as always.
         Binding("ctrl+d", "back", "Exit", priority=True, key_display="^d"),
         Binding("i", "focus_prompt", "Prompt"),
-        Binding("k", "toggle_remote", "Keys"),
+        # Same key as AgentDetailScreen's bar toggle ("a" = Answer there;
+        # here the bar is nav keys, so the label stays "Keys") — one key,
+        # both screens, no muscle-memory split.
+        Binding("a", "toggle_remote", "Keys"),
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
         Binding("d", "scroll_output('down')", "Scroll", show=False),
-        # vim-style scroll jumps, same as AgentDetailScreen. Not in the
-        # footer (44-col fit test gates that) — README-only power-user keys.
+        # vim-style line scroll + scroll jumps, same as AgentDetailScreen.
+        # Not in the footer (44-col fit test gates that) — README-only
+        # power-user keys.
+        Binding("j", "scroll_output('down', 1)", "Scroll", show=False),
+        Binding("k", "scroll_output('up', 1)", "Scroll", show=False),
         Binding("g", "scroll_top", "Top", show=False),
         Binding("G", "scroll_bottom", "End", show=False),
     ]
@@ -1496,10 +1510,12 @@ class TerminalScreen(Screen):
         bar = self.query_one("#remote-bar")
         bar.display = not bar.display
 
-    def action_scroll_output(self, direction: str) -> None:
+    def action_scroll_output(self, direction: str, lines: int | None = None) -> None:
+        # `lines` defaults to half a page (u/d); j/k pass 1 — see
+        # AgentDetailScreen.action_scroll_output.
         log = self.query_one(RichLog)
-        half_page = max(1, log.size.height // 2)
-        delta = -half_page if direction == "up" else half_page
+        step = lines if lines is not None else max(1, log.size.height // 2)
+        delta = -step if direction == "up" else step
         log.scroll_relative(y=delta, animate=False, immediate=True)
         self.on_scroll_moved()
 

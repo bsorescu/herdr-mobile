@@ -117,13 +117,14 @@ reached, an error banner replaces the table; `r` retries.
 |---|---|
 | `i` | Focus the prompt box (type, then `enter` to send) |
 | `→` (in the prompt box) | Accept the ghost-text prompt-history suggestion, if one is showing |
-| `k` | Toggle the remote-control key bar |
+| `a` | Toggle the remote-control key bar (Answer) |
 | `u` / `d` | Scroll output up / down half a page |
+| `j` / `k` | vim-style scroll one line down / up — power-user keys, not shown in the footer, but always available |
 | `g` / `G` | vim-style jump to the very top / very bottom of the output (`G` also resumes following) — power-user keys, not shown in the footer, but always available |
 | `m` | Cycle the agent's permission mode (sends `ctrl+p`, same as Claude Code's own binding) |
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
-The footer at the bottom groups its entries — `q Back` │ `i Ask` `k Keys`
+The footer at the bottom groups its entries — `q Back` │ `i Ask` `a Answer`
 `m Mod` │ `u/d Scr` — visually separating the exit key, actions on the
 current agent, and scrolling the output. Every entry is tappable (not just
 readable), and does the same thing as its physical key regardless of what
@@ -149,7 +150,7 @@ ignore it. History is shared across all agents (prompts like "continue" or
 `~/.local/state/herdr-mobile/prompt_history.json`, capped at the 200 most
 recent, deduped against immediate repeats.
 
-The remote-control bar (`k`) shows only the buttons relevant to what the
+The remote-control bar (`a`) shows only the buttons relevant to what the
 agent is actually asking. `↑ ↓ Enter Esc` are always there while the bar is
 open — useful for any agent menu. `y`/`n` and the numbered-option row only
 appear when the agent's own output actually looks like that kind of
@@ -161,7 +162,7 @@ buttons at all, and no y/n marker means no `y`/`n` buttons. This is
 recomputed on every refresh, so the bar adapts as the agent's output
 changes. It also auto-opens the first time an agent goes `blocked`, and
 auto-closes again once the agent leaves `blocked` — unless you opened it
-yourself with `k`, in which case it stays open. While it's open, physical
+yourself with `a`, in which case it stays open. While it's open, physical
 keyboard keys are still forwarded for arrows/Enter/Tab/Esc/y/n/1-9
 regardless of which buttons are currently shown (forwarding a key with no
 matching button is harmless). The bar's own hint line says `tap buttons to
@@ -189,8 +190,9 @@ session is doing) and opens a terminal screen for it.
 |---|---|
 | `i` | Focus the command box (already focused when the screen opens — see below; useful again after `esc` blurs it) |
 | `ctrl+d` | Exit straight back to the agent list — works even while the command box is focused (see below) |
-| `k` | Toggle the remote-control key bar (`↑ ↓ Enter Esc` — for `less`, `vim`, interactive menus, tab-completion, etc.) |
+| `a` | Toggle the remote-control key bar (`↑ ↓ Enter Esc` — for `less`, `vim`, interactive menus, tab-completion, etc.) — same key as the agent detail screen |
 | `u` / `d` | Scroll output up / down half a page |
+| `j` / `k` | vim-style scroll one line down / up — same as the agent detail screen, applies once the command box is blurred (`esc`) |
 | `g` / `G` | vim-style jump to the very top / very bottom of the output (`G` also resumes following) — same as the agent detail screen, applies once the command box is blurred (`esc`) |
 | `q` | Back to the agent list — closes the bar first if it's open, same as the agent detail screen |
 
@@ -239,7 +241,7 @@ extra-keys row required. An extra-keys row (for `Esc`, `Tab`, arrows) is
 optional convenience, not required — the remote-control bar exists
 specifically so you don't need one to answer a `blocked` agent's prompt.
 The footer entries themselves are tappable too — tapping `Keys` toggles the
-remote-control bar, so `k` is never required on touch.
+remote-control bar, so `a` is never required on touch.
 
 ## Troubleshooting
 

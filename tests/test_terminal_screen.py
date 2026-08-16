@@ -153,8 +153,8 @@ async def test_terminal_remote_bar_is_navigation_core_only(fake_client):
         screen = await open_terminal(app, pilot)
         bar = screen.query_one("#remote-bar")
         assert bar.display is False
-        await pilot.press("escape")  # blur the input first: "k" types into it otherwise
-        await pilot.press("k")
+        await pilot.press("escape")  # blur the input first: "a" types into it otherwise
+        await pilot.press("a")
         assert bar.display is True
         for key_name in ["up", "down", "enter", "esc"]:
             widget = screen.query_one(f"#rk-{key_name}", Button)
@@ -170,7 +170,7 @@ async def test_terminal_arrow_key_forwards_while_bar_visible(fake_client):
     async with app.run_test() as pilot:
         screen = await open_terminal(app, pilot)
         await pilot.press("escape")
-        await pilot.press("k")
+        await pilot.press("a")
         assert screen.query_one("#remote-bar").display is True
         await pilot.press("down")
         await pilot.press("enter")
@@ -230,7 +230,7 @@ async def test_terminal_g_G_scroll_even_while_remote_bar_visible(fake_client):
     async with app.run_test() as pilot:
         screen = await open_terminal(app, pilot)
         await pilot.press("escape")
-        await pilot.press("k")
+        await pilot.press("a")
         assert screen.query_one("#remote-bar").display is True
         log = await settle_at_bottom(screen, pilot)
         await pilot.press("g")
@@ -242,12 +242,31 @@ async def test_terminal_g_G_scroll_even_while_remote_bar_visible(fake_client):
         assert fake_client.keys == []
 
 
+async def test_terminal_j_k_scroll_one_line(fake_client):
+    # Same vim-style line scroll as the detail screen; the bar toggle lives
+    # on "a" here too, so "k" is free to scroll once the input is blurred.
+    fake_client.pane_texts["wT:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("escape")  # blur the input: j/k type into it otherwise
+        bottom = log.scroll_y
+        await pilot.press("k")
+        assert log.scroll_y == bottom - 1
+        assert screen.follow is False
+        await pilot.press("j")  # back at the bottom -> follow resumes
+        assert log.scroll_y == bottom
+        assert screen.follow is True
+        assert fake_client.keys == []
+
+
 async def test_terminal_q_closes_bar_then_returns_to_list(fake_client):
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_terminal(app, pilot)
         await pilot.press("escape")
-        await pilot.press("k")
+        await pilot.press("a")
         assert screen.query_one("#remote-bar").display is True
         await pilot.press("q")  # first q closes the bar
         assert screen.query_one("#remote-bar").display is False
