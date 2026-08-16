@@ -91,3 +91,66 @@ async def test_width_change_forces_a_rerender_of_identical_content(fake_client):
         await pilot.pause()
 
         assert writes, "content unchanged but width changed — the render was skipped"
+
+
+async def test_skip_path_re_pins_the_log_to_the_bottom(fake_client):
+    """Showing the remote bar changes the log's height, not its width.
+
+    The key therefore still matches and the render is skipped — but the bar has
+    taken rows from the viewport, so the last lines are now below it. Only the
+    render path calls scroll_end(), so without a re-pin on the skip path the log
+    stays off the bottom. It stays there indefinitely: the bar auto-shows exactly
+    when an agent goes blocked, and a blocked agent's output does not change, so
+    no later poll rewrites the log either.
+    """
+    # w3:p1 is "working", so the bar starts hidden — wA:p1 is "blocked" and the
+    # bar is already up, which would make this assert nothing.
+    fake_client.reads["w3:p1"] = PANE
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test(size=(40, 16)) as pilot:
+        screen = await open_detail(app, pilot, "w3:p1")
+        screen.refresh_output()
+        await pilot.pause()
+        log = screen.query_one(RichLog)
+        assert log.is_vertical_scroll_end
+        assert not screen.query_one("#remote-bar").display
+
+        # Take rows from the viewport without touching the content or the width.
+        screen.query_one("#remote-bar").display = True
+        await pilot.pause()
+        assert not log.is_vertical_scroll_end, "the bar should have pushed the log off the bottom"
+
+        writes = count_writes(log)
+        screen.refresh_output()
+        await pilot.pause()
+
+        assert writes == [], "height-only change should still take the skip path"
+        assert log.is_vertical_scroll_end, (
+            "the skip path left the log off the bottom: the last rows sit under "
+            "the remote bar and nothing will scroll them back into view"
+        )
+
+
+async def test_skip_path_still_syncs_the_remote_bar_buttons(fake_client):
+    """Status can flip while the text stands still.
+
+    The answer buttons are driven by status, not by the log contents, so the
+    skip path has to keep syncing them; only the redraw is skipped.
+    """
+    fake_client.reads["wA:p1"] = PANE
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        screen.refresh_output()
+        await pilot.pause()
+
+        calls = []
+        original = screen._sync_remote_bar_buttons
+        screen._sync_remote_bar_buttons = lambda *a, **k: (calls.append(1), original(*a, **k))[1]
+
+        writes = count_writes(screen.query_one(RichLog))
+        screen.refresh_output()
+        await pilot.pause()
+
+        assert writes == [], "content and width unchanged — expected the skip path"
+        assert calls, "the skip path stopped syncing the remote bar buttons"

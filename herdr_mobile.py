@@ -1039,6 +1039,12 @@ class AgentDetailScreen(Screen):
             # buttons still need re-syncing (~0.25ms) — it is the redraw that
             # is skipped, not the state.
             self._sync_remote_bar_buttons()
+            # Showing the remote bar changes the log's height, not its width, so
+            # the key still matches and we land here — but the bar has taken rows
+            # from the viewport. Re-pin, or the last lines stay hidden below it:
+            # the bar auto-shows exactly when an agent goes blocked, and a blocked
+            # agent's output does not change, so nothing would rewrite the log.
+            log.scroll_end(animate=False, immediate=True)
             return
         self._render_key = render_key
         log.clear()
@@ -1389,6 +1395,10 @@ class TerminalScreen(Screen):
         # because there is no on_resize handler.
         render_key = (content, log.scrollable_content_region.width)
         if render_key == self._render_key:
+            # Same re-pin as AgentDetailScreen: anything that changes the log's
+            # height without changing its width leaves the key matching, and
+            # scroll_end otherwise only runs on the render path.
+            log.scroll_end(animate=False, immediate=True)
             return
         self._render_key = render_key
         log.clear()
