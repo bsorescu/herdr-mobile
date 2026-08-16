@@ -790,8 +790,6 @@ async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
         assert screen.query_one("#remote-bar").display is True
-        hint = screen.query_one("#remote-hint", Static)
-        assert "n/p" in str(hint.render())
         await pilot.press("k")  # toggle the bar off
         assert screen.query_one("#remote-bar").display is False
 
@@ -799,9 +797,8 @@ async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
 async def test_detail_footer_fits_44_cols_with_separators(fake_client):
     # Regression: at 44 columns the old stock Footer used to truncate. The
     # detail screen now uses a custom DetailFooter that groups keys with
-    # "│" separators (exit · agent actions · agent-cycling · scroll) —
-    # every entry AND all three separators must actually fit on a
-    # 44-column phone screen.
+    # "│" separators (exit · agent actions · scroll) — every entry AND
+    # both separators must actually fit on a 44-column phone screen.
     from herdr_mobile import DetailFooter, FooterEntry, FooterSeparator
 
     app = HerdrMobileApp(client=fake_client)
@@ -811,8 +808,8 @@ async def test_detail_footer_fits_44_cols_with_separators(fake_client):
         entries = list(footer.query(FooterEntry))
         separators = list(footer.query(FooterSeparator))
         descriptions = {e.description for e in entries}
-        assert descriptions == {"Back", "Ask", "Keys", "Mod", "Agt", "Scr"}
-        assert len(separators) == 3
+        assert descriptions == {"Back", "Ask", "Keys", "Mod", "Scr"}
+        assert len(separators) == 2
         # Nothing renders past the 44-column screen edge — proves nothing
         # got silently clipped out.
         for widget in [*entries, *separators]:
@@ -957,16 +954,20 @@ async def test_yn_prompt_shows_only_yn_buttons(fake_client):
         assert ("wA:p1", "y") in fake_client.keys
 
 
-async def test_remote_hint_shortens_when_no_answer_buttons(fake_client):
+async def test_remote_hint_hides_without_answer_buttons_shows_with(fake_client):
     from textual.widgets import Static
 
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         screen = await open_detail(app, pilot, "wA:p1")  # blocked, no dialog in reads
         hint = screen.query_one("#remote-hint", Static)
-        text = str(hint.render())
-        assert "n/p" in text
-        assert "tap buttons to answer" not in text
+        assert hint.display is False
+
+        fake_client.reads["wA:p1"] = "Allow this action? (y/n)"
+        screen.refresh_output()
+        await pilot.pause()
+        assert hint.display is True
+        assert "tap buttons to answer" in str(hint.render())
 
 
 async def test_auto_shown_bar_hides_when_status_leaves_blocked(fake_client):

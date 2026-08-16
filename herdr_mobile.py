@@ -815,9 +815,9 @@ class DetailFooter(Horizontal):
         self._screen = screen
 
     def compose(self) -> ComposeResult:
-        # "Ask"/"Mod"/"Agt"/"Scr" are shortened (from Prompt/Mode/Agent/
-        # Scroll) to fit all 6 entries plus 3 separators within a
-        # 44-column phone screen (measured empirically — see
+        # "Ask"/"Mod"/"Scr" are shortened (from Prompt/Mode/Scroll) to fit
+        # all 5 entries plus 2 separators within a 44-column phone screen
+        # (measured empirically — see
         # test_detail_footer_fits_44_cols_with_separators). "Back"/"Keys"
         # are already short enough to stay full.
         s = self._screen
@@ -826,8 +826,6 @@ class DetailFooter(Horizontal):
         yield FooterEntry("i", "Ask", s.action_focus_prompt)
         yield FooterEntry("k", "Keys", s.action_toggle_remote)
         yield FooterEntry("m", "Mod", s.action_cycle_mode)
-        yield FooterSeparator()
-        yield FooterEntry("n/p", "Agt", s.action_next_agent)
         yield FooterSeparator()
         yield FooterEntry("u/d", "Scr", lambda: s.action_scroll_output("up"))
 
@@ -844,8 +842,6 @@ class AgentDetailScreen(Screen):
         Binding("escape", "back", show=False),
         Binding("i", "focus_prompt", "Prompt"),
         Binding("k", "toggle_remote", "Keys"),
-        Binding("n", "next_agent", "Agent", key_display="n/p"),
-        Binding("p", "prev_agent", "Agent", show=False),
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
         Binding("d", "scroll_output('down')", "Scroll", show=False),
         Binding("m", "cycle_mode", "Mode"),
@@ -917,11 +913,11 @@ class AgentDetailScreen(Screen):
             with Horizontal(id="remote-row2"):
                 for i in range(1, 10):
                     yield Button(str(i), id=f"rk-{i}")
-            yield Static("tap buttons to answer · n/p = next/prev agent", id="remote-hint")
+            yield Static("tap buttons to answer", id="remote-hint")
         yield Input(placeholder="prompt… (i to focus)", id="prompt")
         # Custom footer (not Textual's stock Footer): groups keys visually
-        # with "│" separators — exit │ actions-on-agent │ agent-cycling │
-        # scroll — which Textual 8.2.8's Footer can't render (its only
+        # with "│" separators — exit │ actions-on-agent │ scroll — which
+        # Textual 8.2.8's Footer can't render (its only
         # grouping mechanism, Binding.Group, merges keys under one shared
         # label, not a plain separator between independent entries). ctrl+p
         # still opens the command palette regardless (App-level binding,
@@ -954,7 +950,7 @@ class AgentDetailScreen(Screen):
         false-positive and light up answer buttons with no real dialog
         present. Recomputed on every refresh (see
         refresh_output/refresh_header/action_toggle_remote) so the bar
-        adapts as content and status change. The hint line shortens when
+        adapts as content and status change. The hint line hides when
         there are no answer buttons to tap.
         """
         a = self._agent()
@@ -965,10 +961,7 @@ class AgentDetailScreen(Screen):
         self.query_one("#rk-y", Button).display = yn
         self.query_one("#rk-n", Button).display = yn
         hint = self.query_one("#remote-hint", Static)
-        if count > 0 or yn:
-            hint.update("tap buttons to answer · n/p = next/prev agent")
-        else:
-            hint.update("n/p = next/prev agent")
+        hint.display = count > 0 or yn
 
     def _tick(self) -> None:
         if self.app.screen is not self:
@@ -1214,12 +1207,6 @@ class AgentDetailScreen(Screen):
             return
         self.app.notify("Mode cycle sent", severity="information")
 
-    def action_next_agent(self) -> None:
-        self.app.cycle_agent(self.pane_id, +1)
-
-    def action_prev_agent(self) -> None:
-        self.app.cycle_agent(self.pane_id, -1)
-
     def on_button_pressed(self, event: Button.Pressed) -> None:
         key = event.button.id.removeprefix("rk-")
         self._send_remote_key(key)
@@ -1258,11 +1245,6 @@ class AgentDetailScreen(Screen):
         if event.key == "q":
             bar.display = False
             event.stop()
-            return
-        if event.key in ("n", "p"):
-            # Reserved for agent cycling (see BINDINGS) even while the remote
-            # bar is visible; answering y/n prompts remotely still works via
-            # the on-screen buttons.
             return
         if event.key in REMOTE_KEYS:
             self._send_remote_key(REMOTE_KEYS[event.key])
@@ -1319,7 +1301,7 @@ class TerminalScreen(Screen):
     Kept as its OWN Screen class rather than an AgentDetailScreen
     subclass/flag: a plain terminal pane has no AgentInfo at all (it isn't
     a registered agent), and AgentDetailScreen's status header, digit/y-n
-    dialog-sizing, mode detection, stall-watch, and n/p agent-cycling all
+    dialog-sizing, mode detection, and stall-watch all
     assume one exists. Duplicating a Screen's worth of wiring is the
     tradeoff for not threading `if is_terminal:` branches through code that
     fundamentally depends on agent state elsewhere. What IS shared: the
@@ -1704,15 +1686,6 @@ class HerdrMobileApp(App):
                 # silently, strike or not.
                 del self.pending_prompts[pane_id]
                 self._stale_strikes.discard(pane_id)
-
-    def cycle_agent(self, current: str, delta: int) -> None:
-        if not self.agents:
-            return
-        ids = [a.pane_id for a in self.agents]
-        idx = ids.index(current) if current in ids else 0
-        target = ids[(idx + delta) % len(ids)]
-        self.pop_screen()
-        self.open_agent(target)
 
     def open_agent(self, pane_id: str) -> None:
         agent = next((a for a in self.agents if a.pane_id == pane_id), None)

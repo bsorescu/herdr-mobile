@@ -118,20 +118,19 @@ reached, an error banner replaces the table; `r` retries.
 | `i` | Focus the prompt box (type, then `enter` to send) |
 | `→` (in the prompt box) | Accept the ghost-text prompt-history suggestion, if one is showing |
 | `k` | Toggle the remote-control key bar |
-| `n` / `p` | Cycle to next / previous agent (list order) |
 | `u` / `d` | Scroll output up / down half a page |
 | `g` / `G` | vim-style jump to the very top / very bottom of the output (`G` also resumes following) — power-user keys, not shown in the footer, but always available |
 | `m` | Cycle the agent's permission mode (sends `ctrl+p`, same as Claude Code's own binding) |
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
 The footer at the bottom groups its entries — `q Back` │ `i Ask` `k Keys`
-`m Mod` │ `n/p Agt` │ `u/d Scr` — visually separating the exit key, actions
-on the current agent, cycling to another agent, and scrolling the output.
-Every entry is tappable (not just readable), and does the same thing as its
-physical key regardless of what else has focus. A few labels are
-abbreviated (`Ask` for the prompt box, `Mod`/`Agt`/`Scr` for mode-cycling/
-agent-cycling/scroll) to fit all six entries and all three separators on a
-44-column phone screen.
+`m Mod` │ `u/d Scr` — visually separating the exit key, actions on the
+current agent, and scrolling the output. Every entry is tappable (not just
+readable), and does the same thing as its physical key regardless of what
+else has focus. A few labels are abbreviated (`Ask` for the prompt box,
+`Mod`/`Scr` for mode-cycling/scroll) to fit all five entries and both
+separators on a 44-column phone screen. To move to another agent, go back
+to the list with `q` and pick it there.
 
 The output pane follows the agent's live output automatically; scrolling up
 pauses following (so you can read history without it jumping), scrolling
@@ -163,13 +162,10 @@ recomputed on every refresh, so the bar adapts as the agent's output
 changes. It also auto-opens the first time an agent goes `blocked`, and
 auto-closes again once the agent leaves `blocked` — unless you opened it
 yourself with `k`, in which case it stays open. While it's open, physical
-keyboard keys are still forwarded for arrows/Enter/Tab/Esc/y/1-9 regardless
-of which buttons are currently shown (forwarding a key with no matching
-button is harmless) — **but not `n` or `p`**: those always cycle to the
-next/previous agent, bar open or closed, so to answer *No* you have to tap
-the on-screen `[n]` button when it's showing (the bar's own hint line says
-`n/p = next/prev agent`, plus `tap buttons to answer` whenever there's
-something to tap).
+keyboard keys are still forwarded for arrows/Enter/Tab/Esc/y/n/1-9
+regardless of which buttons are currently shown (forwarding a key with no
+matching button is harmless). The bar's own hint line says `tap buttons to
+answer` whenever there's something to tap, and hides otherwise.
 
 For Claude Code agents, the detected permission mode (`auto`, `plan`, or
 `bypass`) is shown inline on the session border row at the bottom of the

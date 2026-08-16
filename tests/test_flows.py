@@ -1,20 +1,34 @@
 from herdr_mobile import AgentDetailScreen, AgentListScreen, HerdrError, HerdrMobileApp
 
 
-async def test_n_p_cycle_in_list_order(fake_client):
+async def test_n_p_no_longer_cycle_agents(fake_client):
+    # Agent cycling was removed 2026-08-16: navigation is q back to the
+    # list, then pick a session there. n/p must be inert on the detail
+    # screen (w3:p1 is "working", so the remote bar stays hidden and
+    # nothing else claims the keys).
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
-        app.open_agent("wA:p1")  # first in triage order
+        app.open_agent("w3:p1")
         await pilot.pause()
         await pilot.press("n")
-        assert app.screen.pane_id == "wC:p1"
-        await pilot.press("n")
+        await pilot.press("p")
+        assert isinstance(app.screen, AgentDetailScreen)
         assert app.screen.pane_id == "w3:p1"
-        await pilot.press("p")
-        assert app.screen.pane_id == "wC:p1"
-        await pilot.press("p")
-        await pilot.press("p")
-        assert app.screen.pane_id == "w7:p2"  # wrap backwards
+        assert fake_client.keys == []
+
+
+async def test_physical_n_answers_no_while_bar_visible(fake_client):
+    # With cycling gone, "n" is no longer reserved: while the remote bar
+    # is open it forwards to the agent like y/1-9 already did, so a
+    # physical keyboard can answer No directly.
+    fake_client.reads["wA:p1"] = "Allow this action? (y/n)"
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        app.open_agent("wA:p1")  # blocked -> bar auto-shows
+        await pilot.pause()
+        assert app.screen.query_one("#remote-bar").display is True
+        await pilot.press("n")
+        assert ("wA:p1", "n") in fake_client.keys
 
 
 async def test_opening_done_agent_marks_seen(fake_client):
