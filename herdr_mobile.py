@@ -576,6 +576,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
 from textual.suggester import Suggester
 from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, Static
+from textual.worker import get_current_worker
 
 STATUS_ICONS = {"blocked": "🔴", "done": "🟢", "working": "🔵", "idle": "⚪", "unknown": "⚫"}
 LIST_POLL_SECONDS = 3.0
@@ -1023,15 +1024,31 @@ class AgentDetailScreen(Screen):
         _render_output(): the user can scroll up while the read is in flight,
         and content fetched before that must not land on top of the history
         they stopped to read.
+
+        exclusive=True does not interrupt a thread worker — it marks the old one
+        cancelled and lets it run to completion — so a slow read can still come
+        back after a newer one and overwrite it, leaving _render_key caching the
+        older content as if it were current. Check is_cancelled before handing
+        anything back.
+
+        `app` is read once up front rather than through self.app per call: inside
+        a thread there is no active_app contextvar, so self.app resolves by
+        walking _parent and raises NoActiveAppError once the screen is popped.
         """
         if not self.follow:
             return
+        app = self.app
+        worker = get_current_worker()
         try:
-            content = self.app.client.read_agent(self.pane_id)
+            content = app.client.read_agent(self.pane_id)
         except HerdrError as err:
-            self.app.call_from_thread(self.app.handle_agent_error, self.pane_id, err)
+            if worker.is_cancelled:
+                return
+            app.call_from_thread(app.handle_agent_error, self.pane_id, err)
             return
-        self.app.call_from_thread(self._render_output, content)
+        if worker.is_cancelled:
+            return
+        app.call_from_thread(self._render_output, content)
 
     def refresh_output(self) -> None:
         """Synchronous fetch + render, for callers that need the screen current
@@ -1418,16 +1435,25 @@ class TerminalScreen(Screen):
 
     @work(thread=True, exclusive=True, group="read-pane")
     def poll_output(self) -> None:
-        """Timer path for refresh_output() — see AgentDetailScreen.poll_output()."""
+        """Timer path for refresh_output() — see AgentDetailScreen.poll_output().
+
+        Same is_cancelled and hoisted-app reasoning as there.
+        """
         if not self.follow:
             return
+        app = self.app
+        worker = get_current_worker()
         try:
-            content = self.app.client.read_pane(self.pane_id)
+            content = app.client.read_pane(self.pane_id)
         except HerdrError as err:
-            self.app.call_from_thread(
-                self.app.notify, err.message, title=err.code, severity="error")
+            if worker.is_cancelled:
+                return
+            app.call_from_thread(
+                app.notify, err.message, title=err.code, severity="error")
             return
-        self.app.call_from_thread(self._render_output, content)
+        if worker.is_cancelled:
+            return
+        app.call_from_thread(self._render_output, content)
 
     def refresh_output(self) -> None:
         if not self.follow:
@@ -1602,12 +1628,20 @@ class HerdrMobileApp(App):
 
         exclusive=True: if a call ever outlasts LIST_POLL_SECONDS, the next
         tick replaces the in-flight worker instead of stacking more threads
-        onto a CLI that is already struggling.
+        onto a CLI that is already struggling. It does not interrupt the thread
+        it replaces, though — that one runs to completion and would otherwise
+        deliver its older list after the newer one, so check is_cancelled before
+        handing anything back.
         """
+        worker = get_current_worker()
         try:
             agents = self.client.list_agents()
         except HerdrError as err:
+            if worker.is_cancelled:
+                return
             self.call_from_thread(self._handle_list_error, err)
+            return
+        if worker.is_cancelled:
             return
         self.call_from_thread(self._apply_agents, agents)
 
