@@ -122,7 +122,7 @@ reached, an error banner replaces the table; `r` retries.
 | `j` / `k` | vim-style scroll one line down / up — power-user keys, not shown in the footer, but always available |
 | `g` / `G` | vim-style jump to the very top / very bottom of the output (`G` also resumes following) — power-user keys, not shown in the footer, but always available |
 | `m` | Cycle the agent's permission mode (sends `ctrl+p`, same as Claude Code's own binding) |
-| `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
+| `q` / `esc` | Back to list — with two exceptions. While the prompt box is focused, `esc` just unfocuses it (nothing is sent, your draft stays). While the remote-control bar is open, neither key goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
 The footer at the bottom groups its entries — `q Back` │ `i Ask` `a Answer`
 `m Mod` │ `u/d Scr` — visually separating the exit key, actions on the
@@ -142,10 +142,11 @@ while it's focused) — except while the prompt box is focused, where typing
 `u`/`d` inserts the characters instead, same as any other letter.
 
 The prompt box offers fish/Claude-Code-style ghost-text completion from
-your prompt history as you type: it suggests the most recent previously
-sent prompt that starts with what you've typed so far, dimmed in after the
-cursor — press `→` at the end of the line to accept it, or keep typing to
-ignore it. History is shared across all agents (prompts like "continue" or
+your prompt history: focusing the empty box with `i` immediately ghosts in
+your most recent prompt, and as you type it suggests the most recent
+previously sent prompt that starts with what you've typed so far, dimmed
+in after the cursor — press `→` at the end of the line to accept the
+suggestion, or keep typing to ignore it. History is shared across all agents (prompts like "continue" or
 "run the tests" are often reused) and persisted to
 `~/.local/state/herdr-mobile/prompt_history.json`, capped at the 200 most
 recent, deduped against immediate repeats.

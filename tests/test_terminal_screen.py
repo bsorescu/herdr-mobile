@@ -90,6 +90,24 @@ async def test_terminal_prompt_sends_via_pane_run(fake_client):
         assert screen.query_one("#prompt", Input).value == ""
 
 
+async def test_terminal_i_preseeds_most_recent_prompt_as_ghost(fake_client):
+    # Same preseed as the agent detail screen: "i" on an empty command box
+    # ghosts the most recent history entry, RIGHT ARROW accepts it.
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        await pilot.press(*"ls -la")
+        await pilot.press("enter")
+
+        await pilot.press("escape")  # blur, then re-enter the box via "i"
+        await pilot.press("i")
+        await pilot.pause()
+        prompt = screen.query_one("#prompt", Input)
+        assert prompt._suggestion == "ls -la"
+        await pilot.press("right")
+        assert prompt.value == "ls -la"
+
+
 async def test_terminal_stall_watch_is_disabled(fake_client):
     # A plain shell pane has no idle/blocked agent lifecycle to watch for.
     app = HerdrMobileApp(client=fake_client)

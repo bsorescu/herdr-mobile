@@ -359,17 +359,41 @@ async def test_prompt_history_shared_across_agents(fake_client):
         assert screen2.query_one("#prompt", Input)._suggestion == "run the tests"
 
 
-async def test_prompt_history_empty_prefix_has_no_suggestion(fake_client):
+async def test_i_preseeds_most_recent_prompt_as_ghost(fake_client):
+    # Focusing the empty prompt with "i" shows the most recent history entry
+    # as ghost text right away (Input itself only queries the suggester once
+    # the value is non-empty), and RIGHT ARROW accepts it exactly like a
+    # typed-prefix suggestion.
     app = HerdrMobileApp(client=fake_client)
     async with app.run_test() as pilot:
         await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
+        await pilot.press(*"continue")
+        await pilot.press("enter")
         await pilot.press("i")
         await pilot.press(*"run the tests")
         await pilot.press("enter")
 
         await pilot.press("i")
+        await pilot.pause()  # let the seeded SuggestionReady land
+        prompt_input = app.screen.query_one("#prompt", Input)
+        assert prompt_input.value == ""
+        assert prompt_input._suggestion == "run the tests"  # most recent wins
+
+        await pilot.press("right")  # accept — Input's own built-in behavior
+        assert prompt_input.value == "run the tests"
+
+
+async def test_i_with_empty_history_preseeds_nothing(fake_client):
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        await open_detail(app, pilot, "w3:p1")
+        await pilot.press("i")
         await pilot.pause()
-        assert app.screen.query_one("#prompt", Input)._suggestion == ""
+        prompt_input = app.screen.query_one("#prompt", Input)
+        assert prompt_input._suggestion == ""
+        await pilot.press("right")
+        assert prompt_input.value == ""
 
 
 async def test_right_arrow_does_not_conflict_with_remote_bar_while_input_focused(fake_client):

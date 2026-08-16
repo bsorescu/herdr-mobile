@@ -574,7 +574,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import Screen
-from textual.suggester import Suggester
+from textual.suggester import Suggester, SuggestionReady
 from textual.widgets import Button, DataTable, Footer, Header, Input, RichLog, Static
 from textual.worker import get_current_worker
 
@@ -634,6 +634,32 @@ class PromptHistorySuggester(Suggester):
             if entry.casefold().startswith(lowered):
                 return entry
         return None
+
+
+def preseed_prompt_suggestion(prompt: "Input", history: PromptHistoryStore) -> None:
+    """Show the most recent history entry as ghost text in an empty prompt.
+
+    Input only queries its suggester when the value is non-empty (see
+    Input._watch_value in textual==8.2.8), so on a plain "i" the box is
+    blank and the accept-with-RIGHT-ARROW affordance is invisible until the
+    first keystroke. Seed it through Input's own SuggestionReady message —
+    but deferred via call_later: Widget.focus() itself only schedules
+    set_focus through app.call_later, and Input._on_focus clears
+    _suggestion, so a seed posted directly from the "i" action would land
+    BEFORE the Focus event and be wiped by it. Queueing behind focus's own
+    callback puts the seed after it. _on_suggestion_ready checks
+    event.value == self.value, so the seed also drops harmlessly if the
+    user has already typed by the time it lands; typing afterwards
+    re-queries the live suggester as before.
+    """
+
+    def seed() -> None:
+        if prompt.value:
+            return  # mid-edit: the live suggester owns the ghost text
+        if history.entries:
+            prompt.post_message(SuggestionReady(value="", suggestion=history.entries[0]))
+
+    prompt.app.call_later(seed)
 
 
 REMOTE_KEYS = {"up": "up", "down": "down", "enter": "enter", "tab": "tab",
@@ -1156,7 +1182,9 @@ class AgentDetailScreen(Screen):
         self.app.pop_screen()
 
     def action_focus_prompt(self) -> None:
-        self.query_one("#prompt", Input).focus()
+        prompt = self.query_one("#prompt", Input)
+        prompt.focus()
+        preseed_prompt_suggestion(prompt, self.app.prompt_history)
 
     def action_toggle_remote(self) -> None:
         bar = self.query_one("#remote-bar")
@@ -1504,7 +1532,9 @@ class TerminalScreen(Screen):
         self.app.pop_screen()
 
     def action_focus_prompt(self) -> None:
-        self.query_one("#prompt", Input).focus()
+        prompt = self.query_one("#prompt", Input)
+        prompt.focus()
+        preseed_prompt_suggestion(prompt, self.app.prompt_history)
 
     def action_toggle_remote(self) -> None:
         bar = self.query_one("#remote-bar")
