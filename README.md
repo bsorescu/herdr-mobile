@@ -121,6 +121,7 @@ reached, an error banner replaces the table; `r` retries.
 | `k` | Toggle the remote-control key bar |
 | `n` / `p` | Cycle to next / previous agent (list order) |
 | `u` / `d` | Scroll output up / down half a page |
+| `g` / `G` | vim-style jump to the very top / very bottom of the output (`G` also resumes following) — power-user keys, not shown in the footer, but always available |
 | `m` | Cycle the agent's permission mode (sends `ctrl+p`, same as Claude Code's own binding) |
 | `q` / `esc` | Back to list — but while the remote-control bar is open, neither goes back: `q` closes the bar instead, and `esc` is forwarded to the agent instead (see below) |
 
@@ -195,6 +196,7 @@ session is doing) and opens a terminal screen for it.
 | `ctrl+d` | Exit straight back to the agent list — works even while the command box is focused (see below) |
 | `k` | Toggle the remote-control key bar (`↑ ↓ Enter Esc` — for `less`, `vim`, interactive menus, tab-completion, etc.) |
 | `u` / `d` | Scroll output up / down half a page |
+| `g` / `G` | vim-style jump to the very top / very bottom of the output (`G` also resumes following) — same as the agent detail screen, applies once the command box is blurred (`esc`) |
 | `q` | Back to the agent list — closes the bar first if it's open, same as the agent detail screen |
 
 Unlike the agent detail screen (navigation-first, prompt box unfocused

@@ -719,6 +719,71 @@ async def test_u_scrolls_even_while_remote_bar_visible(fake_client):
         assert fake_client.keys == []
 
 
+async def test_g_key_jumps_to_top(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        await settle_at_bottom(screen, pilot)
+        assert screen.follow is True
+        log = screen.query_one(RichLog)
+        await pilot.press("g")
+        assert log.scroll_y == 0
+        assert screen.follow is False
+
+
+async def test_G_key_jumps_to_bottom_and_resumes_follow(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("g")  # jump to top first
+        assert screen.follow is False
+
+        # Reuses the exact return-to-bottom path: content refreshes
+        # synchronously, no pilot.pause()/tick wait needed.
+        fake_client.reads["wA:p1"] = "FRESH CONTENT"
+        await pilot.press("G")
+        assert screen.follow is True
+        assert log.is_vertical_scroll_end
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "FRESH CONTENT" in rendered
+
+
+async def test_g_G_typed_into_prompt_input_insert_not_scroll(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        assert screen.follow is True
+        await pilot.press("i")
+        assert isinstance(app.focused, Input)
+        scroll_before = log.scroll_y
+        await pilot.press("g")
+        await pilot.press("G")
+        assert screen.query_one("#prompt", Input).value == "gG"
+        assert log.scroll_y == scroll_before
+        assert screen.follow is True  # unaffected: keys were consumed by the Input
+
+
+async def test_g_G_scroll_even_while_remote_bar_visible(fake_client):
+    fake_client.reads["wA:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_detail(app, pilot, "wA:p1")  # blocked -> bar auto-shows
+        assert screen.query_one("#remote-bar").display is True
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("g")
+        assert log.scroll_y == 0
+        assert screen.follow is False
+        await pilot.press("G")
+        assert screen.follow is True
+        # g/G are not remote keys: nothing forwarded to the agent
+        assert fake_client.keys == []
+
+
 async def test_remote_hint_shown_with_bar_hidden_with_bar(fake_client):
     from textual.widgets import Static
     app = HerdrMobileApp(client=fake_client)

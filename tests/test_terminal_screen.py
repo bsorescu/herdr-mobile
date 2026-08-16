@@ -9,6 +9,16 @@ async def open_terminal(app, pilot):
     return app.screen
 
 
+async def settle_at_bottom(screen, pilot):
+    """Same first-layout-pass timing quirk as test_detail_screen.py's own
+    settle_at_bottom — force a genuine, settled non-zero scroll_y."""
+    await pilot.pause()
+    log = screen.query_one(RichLog)
+    log.scroll_end(animate=False, immediate=True)
+    screen.on_scroll_moved()
+    return log
+
+
 async def test_o_key_creates_workspace_and_opens_terminal_screen(fake_client):
     fake_client.new_terminal_pane_id = "wT:p9"
     app = HerdrMobileApp(client=fake_client)
@@ -165,6 +175,71 @@ async def test_terminal_arrow_key_forwards_while_bar_visible(fake_client):
         await pilot.press("down")
         await pilot.press("enter")
         assert fake_client.keys == [("wT:p1", "down"), ("wT:p1", "enter")]
+
+
+async def test_terminal_g_key_jumps_to_top(fake_client):
+    fake_client.pane_texts["wT:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        assert screen.follow is True
+        await pilot.press("escape")  # blur the default-focused input first
+        await pilot.press("g")
+        assert log.scroll_y == 0
+        assert screen.follow is False
+
+
+async def test_terminal_G_key_jumps_to_bottom_and_resumes_follow(fake_client):
+    fake_client.pane_texts["wT:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("escape")
+        await pilot.press("g")  # jump to top first
+        assert screen.follow is False
+
+        fake_client.pane_texts["wT:p1"] = "FRESH CONTENT"
+        await pilot.press("G")
+        assert screen.follow is True
+        assert log.is_vertical_scroll_end
+        rendered = "\n".join(str(strip) for strip in log.lines)
+        assert "FRESH CONTENT" in rendered
+
+
+async def test_terminal_g_G_typed_into_prompt_input_insert_not_scroll(fake_client):
+    fake_client.pane_texts["wT:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        log = await settle_at_bottom(screen, pilot)
+        assert screen.follow is True
+        assert isinstance(app.focused, Input)  # focused by default
+        scroll_before = log.scroll_y
+        await pilot.press("g")
+        await pilot.press("G")
+        assert screen.query_one("#prompt", Input).value == "gG"
+        assert log.scroll_y == scroll_before
+        assert screen.follow is True  # unaffected: keys were consumed by the Input
+
+
+async def test_terminal_g_G_scroll_even_while_remote_bar_visible(fake_client):
+    fake_client.pane_texts["wT:p1"] = "\n".join(f"line {i}" for i in range(200))
+    app = HerdrMobileApp(client=fake_client)
+    async with app.run_test() as pilot:
+        screen = await open_terminal(app, pilot)
+        await pilot.press("escape")
+        await pilot.press("k")
+        assert screen.query_one("#remote-bar").display is True
+        log = await settle_at_bottom(screen, pilot)
+        await pilot.press("g")
+        assert log.scroll_y == 0
+        assert screen.follow is False
+        await pilot.press("G")
+        assert screen.follow is True
+        # g/G are not remote keys: nothing forwarded to the pane
+        assert fake_client.keys == []
 
 
 async def test_terminal_q_closes_bar_then_returns_to_list(fake_client):

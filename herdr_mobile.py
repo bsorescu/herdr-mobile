@@ -847,6 +847,12 @@ class AgentDetailScreen(Screen):
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
         Binding("d", "scroll_output('down')", "Scroll", show=False),
         Binding("m", "cycle_mode", "Mode"),
+        # vim-style scroll jumps. Not shown in the (custom, hand-composed)
+        # footer — a 44-col regression test gates that decision; these stay
+        # README-only power-user keys, same as physical keys always work
+        # regardless of footer real estate.
+        Binding("g", "scroll_top", "Top", show=False),
+        Binding("G", "scroll_bottom", "End", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -1093,6 +1099,24 @@ class AgentDetailScreen(Screen):
         # it explicitly so follow updates immediately.
         self.on_scroll_moved()
 
+    def action_scroll_top(self) -> None:
+        # vim-style "g": jump to the very top. follow naturally pauses via
+        # on_scroll_moved's own is_vertical_scroll_end check — no special
+        # casing needed here, same mechanism u/d already relies on.
+        log = self.query_one(RichLog)
+        log.scroll_to(y=0, animate=False, immediate=True)
+        self.on_scroll_moved()
+
+    def action_scroll_bottom(self) -> None:
+        # vim-style "G": jump to the bottom AND resume follow. Reuses the
+        # exact same return-to-bottom path refresh_output/tests already
+        # rely on (scroll_end immediate + on_scroll_moved flips follow True
+        # + triggers its own immediate refresh_output) rather than
+        # duplicating that logic here.
+        log = self.query_one(RichLog)
+        log.scroll_end(animate=False, immediate=True)
+        self.on_scroll_moved()
+
     def action_cycle_mode(self) -> None:
         # ctrl+p is Claude Code's own binding for cycling its permission
         # mode (auto/plan/bypass); verified as an accepted key spelling for
@@ -1242,6 +1266,10 @@ class TerminalScreen(Screen):
         Binding("k", "toggle_remote", "Keys"),
         Binding("u", "scroll_output('up')", "Scroll", key_display="u/d"),
         Binding("d", "scroll_output('down')", "Scroll", show=False),
+        # vim-style scroll jumps, same as AgentDetailScreen. Not in the
+        # footer (44-col fit test gates that) — README-only power-user keys.
+        Binding("g", "scroll_top", "Top", show=False),
+        Binding("G", "scroll_bottom", "End", show=False),
     ]
 
     DEFAULT_CSS = """
@@ -1367,6 +1395,18 @@ class TerminalScreen(Screen):
         half_page = max(1, log.size.height // 2)
         delta = -half_page if direction == "up" else half_page
         log.scroll_relative(y=delta, animate=False, immediate=True)
+        self.on_scroll_moved()
+
+    def action_scroll_top(self) -> None:
+        # vim-style "g" — see AgentDetailScreen.action_scroll_top.
+        log = self.query_one(RichLog)
+        log.scroll_to(y=0, animate=False, immediate=True)
+        self.on_scroll_moved()
+
+    def action_scroll_bottom(self) -> None:
+        # vim-style "G" — see AgentDetailScreen.action_scroll_bottom.
+        log = self.query_one(RichLog)
+        log.scroll_end(animate=False, immediate=True)
         self.on_scroll_moved()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
