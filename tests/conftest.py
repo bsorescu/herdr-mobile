@@ -57,6 +57,12 @@ class FakeHerdrClient:
         self._maybe_raise("prompt_agent")
         self.prompts.append((pane_id, text))
 
+    def run_pane(self, pane_id, text):
+        # Terminal-screen path: same recording, so flow tests can assert on
+        # .prompts regardless of which send path a screen uses.
+        self._maybe_raise("prompt_agent")
+        self.prompts.append((pane_id, text))
+
     def send_key(self, pane_id, key):
         self._maybe_raise("send_key")
         self.keys.append((pane_id, key))

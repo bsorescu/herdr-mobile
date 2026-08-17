@@ -427,6 +427,24 @@ class HerdrClient:
         return text.replace("\r\n", "\n").replace("\r", "")
 
     def prompt_agent(self, pane_id: str, text: str) -> None:
+        # NOT `pane run`: that types text+CR as one raw burst, and with vim
+        # keybindings enabled a Claude Code composer left in NORMAL mode
+        # (e.g. by our own esc forwarding) eats the leading characters as
+        # motions/commands — the prompt arrives mangled, late, or not at
+        # all (reproduced live, 2026-08-17: "hello ..." lost its "hello"
+        # to h/e/l/l motions + o open-line). Bracketed paste inserts the
+        # text literally in either vim mode — verified live on both claude
+        # and pi composers — and the separate Enter keypress submits it.
+        # The terminal screen intentionally still uses pane run via
+        # run_pane(): shell semantics there, and no vim-mode composer.
+        self._call("pane", "send-text", pane_id, f"\x1b[200~{text}\x1b[201~")
+        self._call("pane", "send-keys", pane_id, "enter")
+
+    def run_pane(self, pane_id: str, text: str) -> None:
+        # Shell semantics: command text + Enter in one go (`pane run`).
+        # Fine for a plain shell — every new shell prompt starts in insert
+        # state, so the vim-NORMAL hazard prompt_agent() works around does
+        # not apply, and this stays exactly the long-proven behavior.
         self._call("pane", "run", pane_id, text)
 
     def send_key(self, pane_id: str, key: str) -> None:
@@ -1577,7 +1595,7 @@ class TerminalScreen(Screen):
             return
         try:
             # pane run = command text + Enter — exactly shell semantics.
-            self.app.client.prompt_agent(self.pane_id, text)
+            self.app.client.run_pane(self.pane_id, text)
         except HerdrError as err:
             self.app.notify(err.message, title=err.code, severity="error")
             return

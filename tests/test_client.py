@@ -57,10 +57,27 @@ def test_read_agent_normalizes_crlf_line_endings():
     assert text == "\x1b[32mline one\x1b[0m\nline two\nline three"
 
 
-def test_prompt_agent_uses_pane_run():
+def test_prompt_agent_uses_bracketed_paste_plus_enter():
+    # `pane run` delivers text+CR as one raw typed burst. With Claude Code's
+    # vim keybindings, a composer left in NORMAL mode (e.g. after our own
+    # esc forwarding) then eats the leading characters as motions/commands
+    # and the prompt is mangled or lost — reproduced live 2026-08-17.
+    # Bracketed paste inserts the text literally regardless of mode (works
+    # on both claude and pi composers, verified live), and a separate
+    # send-keys enter submits it.
     run = fake_run(stdout='{"id":"x","result":{}}')
     HerdrClient(run_cli=run).prompt_agent("w3:p1", "fix the bug")
-    assert run.calls[0] == ["herdr", "pane", "run", "w3:p1", "fix the bug"]
+    assert run.calls == [
+        ["herdr", "pane", "send-text", "w3:p1", "\x1b[200~fix the bug\x1b[201~"],
+        ["herdr", "pane", "send-keys", "w3:p1", "enter"],
+    ]
+
+
+def test_run_pane_uses_pane_run():
+    # The terminal screen's shell commands keep plain `pane run` semantics.
+    run = fake_run(stdout='{"id":"x","result":{}}')
+    HerdrClient(run_cli=run).run_pane("wT:p1", "ls -la")
+    assert run.calls == [["herdr", "pane", "run", "wT:p1", "ls -la"]]
 
 
 def test_send_key_special_vs_text():
